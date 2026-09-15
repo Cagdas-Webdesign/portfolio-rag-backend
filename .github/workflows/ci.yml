@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# No deployment, no cloud credentials, no secrets are used by this workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, type check, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --frozen: fail if the lockfile is out of date rather than silently
+      # resolving something different from local development.
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t portfolio-rag-assistant:ci .
+
+      # The offline stack: no credentials, no network, no cost. `local` is
+      # required rather than incidental — the image defaults to `production`,
+      # where the composition root refuses to build development stand-ins.
+      - name: Smoke test the running image
+        run: |
+          docker run -d --name rag-ci -p 8000:8000 \
+            -e PORTFOLIO_RAG_ENVIRONMENT=local \
+            -e PORTFOLIO_RAG_ALLOWED_ORIGINS=https://example.test \
+            portfolio-rag-assistant:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health > /tmp/health.json; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+
+          curl -fsS http://localhost:8000/openapi.json > /tmp/openapi.json
+          grep -q '"/api/v1/chat"' /tmp/openapi.json
+
+          # A real answer through the real pipeline. The image ships no
+          # knowledge documents, so the honest "not covered" response is the
+          # correct outcome — and a 200 with empty citations is what proves the
+          # endpoint runs rather than 501s.
+          curl -fsS -X POST http://localhost:8000/api/v1/chat \
+            -H 'Content-Type: application/json' \
+            -d '{"message":"What does this service do?"}' > /tmp/chat.json
+          cat /tmp/chat.json
+          grep -q '"citations":\[\]' /tmp/chat.json
+
+          docker rm -f rag-ci
+
+      # The other half of the same rule: production must not start on stubs.
+      - name: A production container refuses development stand-ins
+        run: |
+          if docker run --rm \
+            -e PORTFOLIO_RAG_ENVIRONMENT=production \
+            -e PORTFOLIO_RAG_ALLOWED_ORIGINS=https://example.test \
+            portfolio-rag-assistant:ci \
+            python -c "
+          from portfolio_rag.composition import build_query_components
+          from portfolio_rag.core.config import get_settings
+          build_query_components(get_settings())
+          "; then
+            echo "production accepted a development stand-in" && exit 1
+          fi

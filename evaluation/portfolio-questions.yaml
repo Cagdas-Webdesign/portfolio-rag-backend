@@ -1,0 +1,526 @@
+# Evaluation dataset v1 — the real portfolio corpus (`knowledge/`).
+#
+# Separate from `questions.yaml`, which measures the neutral fixture corpus in
+# `corpus/` and is left untouched. Two datasets, two corpora, two purposes: the
+# fixture set proves the pipeline and the ground truth; this one asks how well
+# the system answers questions about a real person.
+#
+# Ground truth is a document id plus, where the question is section-specific, a
+# section heading — never a chunk id. Every entry is checkable by hand against
+# `../knowledge/`.
+#
+# Categories are the ones the schema defines
+# (`portfolio_rag.evaluation.dataset.QuestionCategory`); the topic groups a
+# reader might expect (WordPress, RAG, automation, …) are spread across them
+# rather than being categories of their own, because the category decides how a
+# question is *scored*, not what it is about.
+#
+#   direct       the answer is stated plainly in one place
+#   paraphrased  the question shares little vocabulary with the passage
+#   multi_source several documents are legitimately relevant
+#   section      the right answer is one specific section, not the document
+#   ambiguous    near-matches exist in other documents — measured on purpose
+#   unknown      the corpus cannot answer it; no source is expected
+#
+# Two schema categories are deliberately unused here:
+#   internal     the real corpus has no `internal` document — all 12 are public,
+#                so there is nothing for such a question to be refused from.
+#   adversarial  reserved for prompt-injection bait. The one adversarially
+#                *phrased* question below (`section-degree-claim`) is not that:
+#                it is a leading question the corpus answers explicitly, so it
+#                is scored like any other answerable question.
+
+# Ground truth completeness audit, 2026-08-26: 24 questions gained one or more
+# expected sources. This corpus states the same fact in several documents on
+# purpose — a profile, a skill and a project document legitimately describe the
+# same technology — so naming a single section per question understated what a
+# correct retrieval looks like. Every source added was decided by reading the
+# corpus and asking whether that section, read alone, answers the question;
+# none was added because retrieval happened to return it. Consequence: hit
+# rates and MRR measured after this audit are NOT comparable with numbers
+# measured before it.
+
+version: 1
+corpus: ../knowledge
+
+questions:
+  # --- A. direct -----------------------------------------------------------
+  # Plainly stated facts a visitor or recruiter would ask for first.
+
+  - id: direct-frontend-stack
+    category: direct
+    question: Welche Technologien nutzt Çağdaş im Frontend?
+    expected_sources:
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: professional-profile
+        section: Frontend, UI and Web Experience
+      - document: react-portfolio
+        section: Technische Basis
+
+  - id: direct-wordpress-experience
+    category: direct
+    question: Hat Çağdaş Erfahrung mit WordPress?
+    expected_sources:
+      - document: wordpress-woocommerce
+        section: WordPress Development
+
+  - id: direct-languages
+    category: direct
+    question: Welche Sprachen spricht Çağdaş?
+    expected_sources:
+      # Canonical location for the language facts; deliberately stated once.
+      - document: professional-profile
+        section: Languages
+
+  - id: direct-study-location
+    category: direct
+    question: Wo hat Çağdaş Wirtschaftsinformatik studiert?
+    expected_sources:
+      - document: education-and-qualifications
+        section: Wirtschaftsinformatik
+
+  - id: direct-abitur
+    category: direct
+    question: Wo hat Çağdaş sein Abitur gemacht?
+    expected_sources:
+      - document: education-and-qualifications
+        section: Schulbildung
+
+  - id: direct-own-plugins
+    category: direct
+    question: Kann Çağdaş eigene WordPress-Plugins entwickeln?
+    expected_sources:
+      - document: plugin-development
+        section: Custom Plugin Development
+      - document: plugin-development
+        section: Positionierung
+
+  - id: direct-databases
+    category: direct
+    question: Mit welchen Datenbanken arbeitet Çağdaş?
+    expected_sources:
+      - document: api-backend-databases
+        section: Databases
+      - document: professional-profile
+        section: Technical Profile
+      - document: fullstack-web-development
+        section: Backend Development
+
+  - id: direct-vector-store
+    category: direct
+    question: Welchen Vector Store nutzt sein RAG-Backend?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Vector Retrieval
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: api-backend-databases
+        section: Cloudflare
+
+  - id: direct-social-platforms
+    category: direct
+    question: Mit welchen Social-Media-Plattformen beschäftigt sich Çağdaş?
+    expected_sources:
+      - document: social-media-content
+        section: Plattformen
+
+  - id: direct-elevenlabs
+    category: direct
+    question: Wofür nutzt Çağdaş ElevenLabs?
+    expected_sources:
+      - document: social-media-content
+        section: ElevenLabs
+
+  - id: direct-contact
+    category: direct
+    question: Wie kann man Çağdaş kontaktieren?
+    expected_sources:
+      - document: job-fit-and-contact
+        section: Kontakt
+
+  # --- B. paraphrased ------------------------------------------------------
+  # Same content, different words — little vocabulary overlap with the passage.
+      - document: job-fit-and-contact
+        section: Kein Kontaktformular erforderlich
+
+  - id: paraphrased-component-ui
+    category: paraphrased
+    question: Kann Çağdaş moderne komponentenbasierte Weboberflächen bauen?
+    expected_sources:
+      - document: react-portfolio
+        section: Component Architecture
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: react-portfolio
+        section: Technische Basis
+
+  - id: paraphrased-premium-plugins
+    category: paraphrased
+    question: Wie vermeidet er bei WordPress unnötige kostenpflichtige Erweiterungen?
+    expected_sources:
+      - document: wordpress-woocommerce
+        section: WordPress ohne unnötige Premium-Abhängigkeiten
+      - document: plugin-development
+        section: Weniger Abhängigkeit von Drittanbieter-Plugins
+
+  - id: paraphrased-frontend-backend-contract
+    category: paraphrased
+    question: Versteht Çağdaş, wie Frontend und Backend miteinander sprechen?
+    expected_sources:
+      - document: fullstack-web-development
+        section: Frontend und Backend verbinden
+      - document: api-backend-databases
+        section: API Contracts
+      - document: react-portfolio
+        section: TypeScript und Frontend Contracts
+
+  - id: paraphrased-edge-backend
+    category: paraphrased
+    question: Kann er serverseitige Logik betreiben, ohne einen klassischen Server zu mieten?
+    expected_sources:
+      - document: api-backend-databases
+        section: Cloudflare
+      - document: fullstack-web-development
+        section: Backend Development
+
+  - id: paraphrased-scroll-animation
+    category: paraphrased
+    question: Womit setzt er zeitlich koordinierte Bewegungsabläufe beim Scrollen um?
+    expected_sources:
+      - document: react-portfolio
+        section: GSAP
+      - document: fullstack-web-development
+        section: Frontend Development
+
+  - id: paraphrased-root-cause
+    category: paraphrased
+    question: Wie geht er vor, wenn etwas nicht funktioniert und die Ursache unklar ist?
+    expected_sources:
+      - document: working-style
+        section: Code Debugging
+      - document: api-backend-databases
+        section: Fehlerdiagnose über Systemgrenzen
+
+  - id: paraphrased-requirements
+    category: paraphrased
+    question: Klärt er vorher, was ein Projekt überhaupt leisten soll?
+    expected_sources:
+      - document: working-style
+        section: Requirements Engineering
+
+  # --- C. multi-source -----------------------------------------------------
+  # Several documents are legitimately relevant; no single one is the answer.
+      - document: working-style
+        section: Struktur vor Umsetzung
+
+  - id: multi-frontend-backend-ai
+    category: multi_source
+    question: Wie verbindet Çağdaş Frontend, Backend und KI in seinem Portfolio?
+    expected_sources:
+      - document: react-portfolio
+        section: Trennung der Projekte
+      - document: custom-rag-backend
+        section: FastAPI API
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: react-portfolio
+        section: Portfolio Assistant Integration
+
+  - id: multi-fullstack-role
+    category: multi_source
+    question: Welche Fähigkeiten bringt Çağdaş für eine Full-Stack-Rolle mit?
+    expected_sources:
+      - document: fullstack-web-development
+        section: Full-Stack-Verständnis
+      - document: professional-profile
+        section: Technical Profile
+      - document: job-fit-and-contact
+        section: Berufliche Ausrichtung
+
+  - id: multi-marketing-automation-web
+    category: multi_source
+    question: Wie verbindet er Marketing, Automation und Webentwicklung?
+    expected_sources:
+      - document: automation-email-marketing
+        section: End-to-End-System
+      - document: social-media-content
+        section: Website und Social Media
+      - document: working-style
+        section: Verbindung mit Marketing und Content
+      - document: social-media-content
+        section: Verbindung von Technik und Content
+
+  - id: multi-api-backend-evidence
+    category: multi_source
+    question: Welche technischen Nachweise im Portfolio zeigen seine API- und Backend-Kompetenz?
+    expected_sources:
+      - document: job-fit-and-contact
+        section: Technische Nachweise im Portfolio
+      - document: api-backend-databases
+        section: Python & FastAPI
+      - document: custom-rag-backend
+        section: Testing
+
+  # --- D. section-specific -------------------------------------------------
+  # The answer is one section, and naming the document alone would not be
+  # enough to call retrieval correct.
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+
+  - id: section-http-200-wrong
+    category: section
+    question: Warum kann ein HTTP-Request technisch erfolgreich sein und fachlich trotzdem falsch?
+    expected_sources:
+      - document: api-backend-databases
+        section: REST APIs und HTTP-Kommunikation
+      - document: api-backend-databases
+        section: API Contracts
+      - document: api-backend-databases
+        section: Fehlerdiagnose über Systemgrenzen
+
+  - id: section-threshold-not-boundary
+    category: section
+    question: Warum ist der Similarity Threshold nicht die eigentliche Sicherheitsgrenze?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Similarity Threshold
+      - document: custom-rag-backend
+        section: Grounding
+
+  - id: section-citation-forge
+    category: section
+    question: Warum kann das Modell nicht einfach eine beliebige Quelle erfinden?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Citation Security
+      - document: custom-rag-backend
+        section: Technologie-Stack
+
+  - id: section-no-answer
+    category: section
+    question: Was passiert, wenn das System keine belegbare Antwort findet?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Unknown Questions
+      - document: custom-rag-backend
+        section: Grounding
+
+  - id: section-backend-as-project
+    category: section
+    question: Warum ist das Backend selbst ein Portfolio-Projekt?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+
+  - id: section-prompt-injection
+    category: section
+    question: Was passiert, wenn in einem Dokument steht, dass frühere Regeln ignoriert werden sollen?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Prompt Injection
+
+  # Adversarially *phrased*: the question presumes a degree that was never
+  # awarded. The corpus states the opposite explicitly, so retrieval must find
+  # that section rather than the question being unanswerable.
+  - id: section-degree-claim
+    category: section
+    question: Hat Çağdaş einen abgeschlossenen Hochschulabschluss in Wirtschaftsinformatik?
+    expected_sources:
+      - document: education-and-qualifications
+        section: Wirtschaftsinformatik
+
+  - id: section-slack-bot-company
+    category: section
+    question: Kann Çağdaş einen individuellen Slack Bot für interne Unternehmensprozesse entwickeln?
+    expected_sources:
+      - document: automation-email-marketing
+        section: Custom Slack Bots
+
+  - id: section-lead-flow
+    category: section
+    question: Wie kann ein Lead von einer Landingpage bis zu HubSpot, Slack und E-Mail-Automation weiterverarbeitet werden?
+    expected_sources:
+      - document: automation-email-marketing
+        section: End-to-End-System
+      - document: automation-email-marketing
+        section: Landingpage zu HubSpot
+      - document: automation-email-marketing
+        section: HubSpot zu Automation zu Slack
+
+  - id: section-elementor-widgets
+    category: section
+    question: Kann er eigene Elementor-Widgets bauen, wenn ein Element fehlt?
+    expected_sources:
+      - document: plugin-development
+        section: Elementor Custom Widgets
+
+  - id: section-woocommerce-shop
+    category: section
+    question: Kann Çağdaş einen kompletten Onlineshop umsetzen?
+    expected_sources:
+      - document: wordpress-woocommerce
+        section: WooCommerce
+
+  # --- E. ambiguous --------------------------------------------------------
+  # Near-matches exist in several documents. These exist to measure whether
+  # `professional-profile` and `fullstack-web-development` compete unhelpfully
+  # or are retrieved together sensibly — a question only a real embedding
+  # model can settle.
+
+  - id: ambiguous-frontend-technologies
+    category: ambiguous
+    question: Welche Frontend-Technologien nutzt Çağdaş?
+    expected_sources:
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: professional-profile
+        section: Frontend, UI and Web Experience
+      - document: react-portfolio
+        section: Technische Basis
+
+  - id: ambiguous-api-frontend
+    category: ambiguous
+    question: Wie verbindet er API-Integration und Frontend?
+    expected_sources:
+      - document: react-portfolio
+        section: API Integration
+      - document: fullstack-web-development
+        section: API Integration
+      - document: api-backend-databases
+        section: API Integration
+
+  - id: ambiguous-react-role
+    category: ambiguous
+    question: Welche Rolle spielt React in seinem Portfolio?
+    expected_sources:
+      - document: react-portfolio
+        section: Technische Basis
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: professional-profile
+        section: Frontend, UI and Web Experience
+
+  # --- F. unknown ----------------------------------------------------------
+  # The corpus has no public answer. Retrieving anything is already wrong, and
+  # no source is named — inventing one here would be inventing knowledge.
+
+  - id: unknown-phone-number
+    category: unknown
+    question: Wie lautet die private Telefonnummer von Çağdaş?
+
+  - id: unknown-major-clients
+    category: unknown
+    question: Für welche großen Kunden hat Çağdaş gearbeitet?
+
+  - id: unknown-salary
+    category: unknown
+    question: Wie hoch ist sein aktuelles Gehalt?
+
+  - id: unknown-kubernetes-production
+    category: unknown
+    question: Welche Kubernetes-Produktionssysteme hat er betrieben?
+
+  - id: unknown-medical-training
+    category: unknown
+    question: Welche medizinische Ausbildung hat er?
+
+  # --- G. broad -------------------------------------------------------------
+  # High-level questions a visitor asks before any specific one: "what is this
+  # built with", "how does it work", "how does it run". They were the blind
+  # spot this dataset had — every question above asks about one detail, and a
+  # measured live answer to a broad question named one technology out of six
+  # because no single passage carried more. `Technologie-Stack` is the overview
+  # section added for exactly this shape of question; the flow and deployment
+  # questions below check the two other broad shapes against sections that
+  # already existed and were never measured.
+
+  - id: broad-assistant-stack
+    category: direct
+    question: Welche Technologien stecken hinter dem AI Portfolio Assistant?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: react-portfolio
+        section: Trennung der Projekte
+
+  - id: broad-chatbot-technology
+    category: direct
+    question: Welche Technologie steckt hinter diesem Chatbot?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: react-portfolio
+        section: Trennung der Projekte
+
+  - id: broad-system-flow
+    category: section
+    question: Wie funktioniert das System insgesamt, von der Frage bis zur Antwort?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Grundprinzip
+      - document: custom-rag-backend
+        section: Technologie-Stack
+
+  - id: broad-deployment
+    category: multi_source
+    question: Wie wird das Backend ausgeliefert und produktiv betrieben?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: custom-rag-backend
+        section: Docker und Production Readiness
+      - document: api-backend-databases
+        section: Docker
+
+  - id: broad-mistral-vectorize-roles
+    category: multi_source
+    question: Welche Rolle spielen Mistral und Cloudflare Vectorize in diesem System?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: custom-rag-backend
+        section: Vector Retrieval
+      - document: custom-rag-backend
+        section: LLM Generation
+      - document: custom-rag-backend
+        section: Embeddings
+      - document: fullstack-web-development
+        section: Backend Development
+
+  - id: broad-ai-technologies
+    category: multi_source
+    question: Welche KI-Technologien setzt Çağdaş konkret ein?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: social-media-content
+        section: ElevenLabs
+
+  - id: broad-frontend-backend-in-portfolio
+    category: multi_source
+    question: Wie arbeiten Frontend und Backend in diesem Portfolio zusammen?
+    expected_sources:
+      - document: react-portfolio
+        section: Portfolio Assistant Integration
+      - document: custom-rag-backend
+        section: FastAPI API
+      - document: react-portfolio
+        section: API Integration
+
+  - id: broad-project-scope
+    category: multi_source
+    question: Was wurde bei diesem Projekt technisch insgesamt umgesetzt?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: react-portfolio
+        section: Trennung der Projekte

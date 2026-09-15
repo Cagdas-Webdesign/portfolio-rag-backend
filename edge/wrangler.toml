@@ -1,0 +1,45 @@
+# Cloudflare Worker: the public gateway in front of the RAG origin.
+#
+# Nothing here is a secret. The two secrets this Worker needs are set with
+# `wrangler secret put` and never appear in this file or in git:
+#
+#   TURNSTILE_SECRET_KEY   verifies the browser's challenge token
+#   EDGE_SHARED_SECRET     proves to Cloud Run that a request came through here
+#
+# `ORIGIN_URL` is a plain variable rather than a secret: it is not sensitive on
+# its own, and the whole point of EDGE_SHARED_SECRET is that knowing the URL
+# does not help.
+
+name = "portfolio-rag-edge"
+main = "src/worker.js"
+compatibility_date = "2026-09-14"
+preview_urls = false
+[observability]
+enabled = true
+redact_query_string = false
+
+[vars]
+# The Cloud Run service base URL, no trailing slash. Set for real at deploy.
+ORIGIN_URL = "https://portfolio-rag-798718043313.europe-west3.run.app"
+# Comma-separated browser origins allowed to call the gateway.
+ALLOWED_ORIGINS = "https://cagdas-webdesign.github.io"
+
+# Two limiters, because they answer different questions: the burst one stops a
+# script hammering the endpoint, the sustained one stops a slow drip that would
+# still empty a free-tier account over an hour. Both are keyed in the Worker on
+# CF-Connecting-IP plus the route.
+#
+# `namespace_id` is a number chosen per account and must be unique among this
+# Worker's limiters; it is not a secret.
+
+[[unsafe.bindings]]
+name = "CHAT_BURST_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 3, period = 10 }
+
+[[unsafe.bindings]]
+name = "CHAT_SUSTAINED_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 10, period = 60 }

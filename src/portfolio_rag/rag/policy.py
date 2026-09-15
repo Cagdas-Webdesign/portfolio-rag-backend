@@ -1,0 +1,138 @@
+"""The knobs retrieval and context building are allowed to have.
+
+Small on purpose. Every field here is one a caller can genuinely act on today;
+re-rankers, hybrid weights, BM25 mixing and multi-query settings are absent
+because none of them is implemented, and a configuration field for a feature
+that does not exist is a lie with a default value.
+
+**What is not a setting: visibility.** A public request retrieves public
+documents. That is not a policy field, not a flag and not a parameter — it is
+built into the retrieval service, so no caller can forget it, override it, or
+be talked into it. See :mod:`portfolio_rag.rag.retrieval`.
+
+The numbers below have been **measured, not merely chosen** — see
+`evaluation/` and the sweep recorded on :data:`DEFAULT_MIN_SIMILARITY`. What
+the measurement showed is that they are also **provider-specific**: a cosine
+threshold means something different under every embedding model, so these stay
+conservative starting values and the harness exists so they can be re-measured
+against whichever model actually runs.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+#: How many candidates a search asks for. Conservative: five bounded chunks is
+#: already a substantial context, and asking for more mostly buys weaker
+#: matches that the threshold then has to argue with.
+DEFAULT_TOP_K: Final = 5
+
+#: Below this cosine similarity, a match is not treated as evidence.
+#:
+#: A *similarity*, never a confidence: it says how close two vectors point, not
+#: how likely an answer is to be correct, and nothing renders it as a
+#: percentage.
+#:
+#: **This number is specific to one embedding space, and the evaluation says so
+#: with data.** Swept over the fixture corpus (`evaluation/`, 24 questions)
+#: under a lexical embedding, the similarity ranges of answerable and
+#: unanswerable questions overlap completely — answerable spans 0.257 to 0.791,
+#: unanswerable 0.265 to 0.650 — so no value separates them. Raising the threshold
+#: until out-of-scope questions are rejected costs real answers at roughly one
+#: for one; lowering it to 0.15 recovers three answerable questions and rejects
+#: no more noise.
+#:
+#: Two things follow, and both are load-bearing:
+#:
+#: 1. A threshold filters *noise*, not *topic*. What actually keeps the system
+#:    from answering a question the corpus does not cover is the grounding path
+#:    — a model that declines, and a backend that refuses to publish an answer
+#:    with no verified citation. The evaluation is where that stopped being an
+#:    assumption.
+#: 2. Cosine distributions differ per provider, so a value tuned against one
+#:    embedding model means nothing under another. This default is left at a
+#:    conservative starting value rather than fitted to the offline double, and
+#:    **re-measuring it against the production embedding model with
+#:    `portfolio-rag eval run` is a documented deployment step**, not a
+#:    refinement somebody may get around to.
+DEFAULT_MIN_SIMILARITY: Final = 0.25
+
+#: Ceiling on everything sent to the model in one request: instructions plus
+#: context plus question. Well under any current model's window on purpose —
+#: the budget is a cost and latency decision, not a limit discovered by hitting
+#: one.
+DEFAULT_MAX_PROMPT_TOKENS: Final = 6000
+
+#: Room left for the answer, and simultaneously the cap requested from the
+#: provider. One number, so the space reserved and the space allowed cannot
+#: disagree.
+DEFAULT_OUTPUT_RESERVE_TOKENS: Final = 800
+
+
+class RetrievalPolicy(BaseModel):
+    """How many candidates to consider, and how close is close enough."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    top_k: int = Field(
+        default=DEFAULT_TOP_K,
+        ge=1,
+        le=50,
+        description="Maximum number of candidates the vector store is asked for.",
+    )
+    min_similarity: float = Field(
+        default=DEFAULT_MIN_SIMILARITY,
+        ge=-1.0,
+        le=1.0,
+        description=(
+            "Minimum cosine similarity for a match to count as evidence. "
+            "A similarity, not a confidence."
+        ),
+    )
+
+    def describe(self) -> tuple[tuple[str, str], ...]:
+        """Label/value pairs for developer output."""
+        return (
+            ("top k", str(self.top_k)),
+            ("min similarity", f"{self.min_similarity:.3f}"),
+            ("visibility", "public (enforced)"),
+        )
+
+
+class ContextPolicy(BaseModel):
+    """The token budget one answer is allowed to spend."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    max_prompt_tokens: int = Field(
+        default=DEFAULT_MAX_PROMPT_TOKENS,
+        gt=0,
+        description="Ceiling on instructions + context + question, in estimated tokens.",
+    )
+    output_reserve_tokens: int = Field(
+        default=DEFAULT_OUTPUT_RESERVE_TOKENS,
+        gt=0,
+        description="Tokens held back for the answer, and the cap requested from the provider.",
+    )
+
+    @model_validator(mode="after")
+    def _check_budget_leaves_room(self) -> ContextPolicy:
+        if self.output_reserve_tokens >= self.max_prompt_tokens:
+            raise ValueError(
+                f"output_reserve_tokens ({self.output_reserve_tokens}) must be smaller "
+                f"than max_prompt_tokens ({self.max_prompt_tokens})"
+            )
+        return self
+
+    def describe(self) -> tuple[tuple[str, str], ...]:
+        return (
+            ("max prompt tokens", str(self.max_prompt_tokens)),
+            ("output reserve", str(self.output_reserve_tokens)),
+        )
+
+
+#: Used when no policy is supplied.
+DEFAULT_RETRIEVAL_POLICY: Final = RetrievalPolicy()
+DEFAULT_CONTEXT_POLICY: Final = ContextPolicy()

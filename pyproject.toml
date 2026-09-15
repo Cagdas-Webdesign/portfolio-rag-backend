@@ -1,0 +1,125 @@
+[project]
+name = "portfolio-rag-assistant"
+dynamic = ["version"]
+description = "Provider-agnostic RAG backend platform with grounded, source-cited answers."
+readme = "README.md"
+# Upper bound on purpose: a future Python minor release must be adopted
+# deliberately (and verified against mypy, Ruff and the pinned image), not
+# picked up automatically by a resolver. See also `.python-version`.
+requires-python = ">=3.13,<3.14"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    # Async HTTP for the Mistral and Cloudflare adapters, and for the test
+    # client. One HTTP library for the whole project.
+    "httpx2>=2.9",
+    # Markdown structure analysis for chunking. Used only through `.parse()`
+    # to obtain block tokens and source line ranges — never to render.
+    "markdown-it-py>=3.0",
+    # Frontmatter parsing. Used exclusively through a `SafeLoader` subclass,
+    # which constructs plain Python types and no arbitrary objects.
+    "pyyaml>=6.0",
+    "uvicorn>=0.32",
+]
+
+[project.scripts]
+portfolio-rag = "portfolio_rag.cli:main"
+
+# Development tooling as a PEP 735 dependency group: `uv sync` installs it by
+# default, and it is never part of the published/runtime dependency set.
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/portfolio_rag"]
+
+# Single source of truth for the version: portfolio_rag.__version__
+[tool.hatch.version]
+path = "src/portfolio_rag/__init__.py"
+
+# ---------------------------------------------------------------------------
+# Ruff: linting + formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "RUF",  # ruff-specific
+    "S",    # flake8-bandit (security)
+    "ANN",  # flake8-annotations
+]
+ignore = [
+    "ANN401", # allow typing.Any where it is genuinely required
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101", # assert is the point of a test
+    "ANN",  # test functions do not need full annotations
+]
+# These two files feed the query boundary exactly the characters Ruff warns
+# about — non-breaking spaces, zero-width joiners, look-alike punctuation. The
+# ambiguity is the test input, so flagging it here would be flagging the point.
+"tests/unit/test_query_boundary.py" = ["RUF001"]
+"tests/integration/test_hostile_inputs.py" = ["RUF001"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.isort]
+known-first-party = ["portfolio_rag", "tests"]
+
+# ---------------------------------------------------------------------------
+# mypy: static type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+files = ["src", "tests"]
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+# Tests are type-checked like everything else, but a `-> None` on every test
+# function is noise: pytest ignores return values anyway. Arguments and
+# fixtures stay annotated, which is where the type information is useful.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# Import the package from the source tree rather than relying on an editable
+# install being present, so `pytest` behaves the same in a fresh checkout.
+pythonpath = ["src"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]

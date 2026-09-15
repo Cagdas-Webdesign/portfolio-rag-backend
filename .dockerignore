@@ -1,0 +1,38 @@
+# Only pyproject.toml, uv.lock, src/, knowledge/ and README.md belong in the build
+# context. The corpus ships with the image: it is what the service answers from,
+# and it is the source of the text behind every retrieved passage.
+
+.git/
+.github/
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Never let configuration or secrets into the image
+.env
+.env.*
+
+tests/
+docs/
+evaluation/
+.claude/
+AGENTS.md
+CLAUDE.md
+Dockerfile
+.dockerignore
+.gitignore
+
+.DS_Store
+.idea/
+.vscode/
