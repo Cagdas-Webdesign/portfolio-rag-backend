@@ -33,7 +33,7 @@ it, and its per-request behaviour is unchanged.
 | --- | --- |
 | `questions.yaml` | 24 questions in 8 categories, with hand-checkable ground truth |
 | `corpus/` | 7 neutral fixture documents — 6 public, 1 `internal` |
-| `portfolio-questions.yaml` | 49 questions against the real corpus in `../knowledge/`. Defined, not yet measured — see below |
+| `portfolio-questions.yaml` | 49 questions against the real corpus in `../knowledge/`. Run against the production retrieval path — see [The real corpus](#the-real-corpus) |
 
 Ground truth is a **document id plus a section heading**, never a chunk id: chunk ids move when the
 chunking policy changes, and a dataset that breaks on a re-chunk is a dataset that gets deleted
@@ -43,11 +43,11 @@ rather than fixed.
 
 **The corpus is fixtures, not the portfolio.** Every number below was measured against `corpus/` —
 7 neutral fixture documents describing an invented "Example Service" — and that has not changed.
-`knowledge/` now holds the 12 authorized portfolio documents about Çağdaş Uçar, but **no
-measurement recorded here was taken against them.** These numbers therefore measure the *pipeline,
-the ground truth and the parameters*, and remain valid as exactly that baseline. They do not say
-how well this system answers questions about a real person: retrieval quality on the real corpus,
-under the production embedding provider, is still to be evaluated.
+`knowledge/` holds the 12 authorized portfolio documents about Çağdaş Uçar, and **no measurement
+recorded below was taken against them.** These numbers therefore measure the *pipeline, the ground
+truth and the parameters*, and remain valid as exactly that baseline. They do not say how well this
+system answers questions about a real person — that is a separate exercise, and it has been carried
+out against the production path rather than left undone ([The real corpus](#the-real-corpus)).
 
 **The offline embedding provider has no semantics.** `deterministic` derives vectors from SHA-256,
 so its similarities are noise. It scores **0/14 on every hit rate**, which is a true statement about
@@ -55,8 +55,9 @@ that provider and says nothing about the pipeline. The meaningful offline number
 lexical (bag-of-words) double in `tests/doubles.py` — real word overlap, deterministic, free, and
 still not a semantic model.
 
-**Nothing here predicts the production provider.** Re-run this dataset against `mistral-embed` to
-find out what that model does; it is a documented deployment step.
+**Nothing here predicts the production provider.** A cosine distribution is a property of the
+embedding model, so none of the figures below transfers to `mistral-embed`. The real corpus is
+measured with its own dataset, against the real providers.
 
 ## Results
 
@@ -121,6 +122,30 @@ fired and every refusal was earned after generation, by the backend declining to
 with no verifiable source. That is the same conclusion the sweep reached, arriving from the other
 direction — and it is why removing either half would be a mistake: the short circuit saves the
 provider call when it can, and the citation check is what actually holds when it cannot.
+
+## The real corpus
+
+The dataset in `portfolio-questions.yaml` — 49 questions against the 12 documents in `../knowledge/`
+— has been run against the **production retrieval path**: `mistral-embed` for embeddings and
+Cloudflare Vectorize as the store, which is the combination the deployed service uses. That answers
+the question the fixture numbers above deliberately cannot.
+
+Production runs at the shipped policy defaults, `top_k` 5 and `min_similarity` **0.250**
+(`portfolio_rag.rag.policy`), unchanged by that exercise.
+
+**No per-question metrics from that run are recorded in this repository**, so none are quoted here —
+this file does not carry numbers it cannot show you the provenance of. To reproduce them, run the
+dataset with the production embedding configuration in the environment:
+
+```bash
+uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml
+```
+
+Two caveats survive the measurement, because they are properties of the approach rather than of a
+result. A threshold filters noise, not topic — the grounding path is still what refuses a question
+the corpus does not cover, and it is still the part that must not be weakened. And a measurement is
+valid for the corpus and the model it was taken on: changing either, or re-chunking, invalidates it,
+and the dataset is re-run rather than assumed.
 
 ## The categories
 

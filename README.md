@@ -1,45 +1,38 @@
-# portfolio-rag-assistant
+# Portfolio RAG Backend
 
-A provider-agnostic backend platform for retrieval-augmented knowledge assistants.
+A retrieval-augmented generation backend that answers questions about an engineer's work from a
+curated, version-controlled knowledge base. The RAG mechanics — ingestion, chunking, embedding,
+retrieval, context assembly, grounding and citation validation — are implemented in this repository
+rather than delegated to an orchestration framework, and every external model or store is reached
+through a port. FastAPI is the transport boundary; the providers behind it are configuration.
 
-Its first client will be an existing React/Vite portfolio site whose chat UI currently talks to a
-Cloudflare Worker. This service is being built to replace and extend that Worker — without the
-portfolio itself changing in the meantime.
+This repository is the backend only. Its production client is an existing React/Vite portfolio,
+which lives in a separate repository and is developed independently of this one.
 
-> **Status: complete and unreleased.** All six phases are done — the pipeline is built, measured,
-> adversarially tested and documented for deployment. `POST /api/v1/chat` answers a question from
-> public knowledge with citations the backend verified itself, or says honestly that it cannot.
-> Everything runs offline with no account and no key.
->
-> **It is not deployed.** `knowledge/` contains the authorized portfolio corpus. Retrieval against
-> the production embedding model still needs to be measured before deployment; the procedure is in
-> [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+## Production status
 
----
+| | |
+| --- | --- |
+| Release | **v1.0.0** |
+| Runtime | Docker image on **Google Cloud Run**, behind a Cloudflare Worker gateway |
+| Generation | **Cloudflare Workers AI** — `@cf/openai/gpt-oss-120b` |
+| Embeddings | **Mistral** — `mistral-embed` (1024 dimensions, cosine) |
+| Vector store | **Cloudflare Vectorize** |
+| Verification | deployed and smoke-tested against the checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
-## What it does
+Three behaviours define the product surface:
 
-* **Semantic retrieval** over a corpus of versioned Markdown documents.
-* **Public-only retrieval**, enforced structurally: a public request cannot express a search for
-  `internal` documents, so it cannot accidentally perform one.
-* **Bounded context building** — ranked, deduplicated, token-budgeted, never truncated mid-passage.
-* **Provider-agnostic generation** through a narrow port; Cloudflare Workers AI and Mistral are
-  two adapters behind it, not a dependency.
-* **Grounded answers**: generated only from passages retrieved for that question, with no fallback
-  to the model's own knowledge when the corpus is silent.
-* **Backend-owned citations**: the model may select a source label, never name a source. Every
-  citation traces to a chunk that was actually retrieved.
-* **An honest "I don't know"** when nothing supports an answer — with no provider call, no invented
-  facts, and a normal `200`.
-* **End-to-end offline tests**: ingestion to answer, no credentials, no network, no cost.
+* **Grounded answers.** An answer is generated only from passages retrieved for that question. There
+  is no fallback to the model's own knowledge.
+* **Backend-owned citations.** The model may select a source label; it can never name a document,
+  path or URL and have that published. Every citation traces to a chunk that was actually retrieved.
+* **Controlled unknowns.** When retrieval finds nothing above the similarity threshold, the service
+  returns a fixed insufficient-knowledge sentence with an empty citation list, a normal `200`, and
+  no language-model call at all.
 
-It does not claim to be hallucination-free, and no number in it is presented as a confidence. The
-architecture reduces the room a model has to invent and makes what it says checkable; that is a
-different claim, and the honest one. What is enforced structurally, and what remains a risk, is
-written down in [docs/SECURITY.md](docs/SECURITY.md).
-
-Explicit non-goals: microservices, an orchestration framework (LangChain, LlamaIndex, Haystack),
-paid infrastructure, conversation memory, agents, and abstractions without a caller.
+This is not a claim to be hallucination-free, and no number it produces is a confidence. The
+architecture narrows the room a model has to invent and makes what it publishes checkable. What is
+enforced structurally and what remains a risk is written down in [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Architecture at a glance
 
@@ -53,413 +46,165 @@ React portfolio / future clients        developer / CI
 │          error envelope       │   │         knowledge index    │
 │                               │   │         query retrieve     │
 ├───────────────────────────────┤   │         query answer       │
-│ rag/     query side:          │   └─────────────┬──────────────┘
-│   query boundary · retrieval  │                 │
-│   context · prompt · grounding│   ┌─────────────▼──────────────┐
-│   citations · orchestration   │   │ ingestion/  corpus side:   │
-├───────────────────────────────┤   │   discovery · frontmatter  │
-│ application/  indexing:       │◀──┤   validation · normalize   │
-│   desired state · plan ·      │   │   provenance · chunking ·  │
-│   convergent sync             │   │   embedding representation │
+│ rag/     query side:          │   │         eval run           │
+│   query boundary · retrieval  │   └─────────────┬──────────────┘
+│   context · prompt · grounding│                 │
+│   citations · orchestration   │   ┌─────────────▼──────────────┐
+├───────────────────────────────┤   │ ingestion/  corpus side:   │
+│ application/  indexing:       │◀──┤   discovery · frontmatter  │
+│   desired state · plan ·      │   │   validation · normalize   │
+│   convergent sync             │   │   provenance · chunking ·  │
+│                               │   │   embedding representation │
 ├───────────────────────────────┴───┴────────────────────────────┤
 │ domain/     knowledge · embeddings · retrieval vocabulary      │
 │ ports/      LLMProvider · EmbeddingProvider · VectorStore ·    │
 │             ChunkResolver                                      │
 ├────────────────────────────────────────────────────────────────┤
-│ infrastructure/  deterministic + Mistral embeddings            │
-│                  deterministic stub + Mistral + Workers AI     │
-│                  generation                                    │
-│                  in-memory + Cloudflare Vectorize stores       │
+│ infrastructure/  embeddings:  deterministic · Mistral          │
+│                  generation:  deterministic · Mistral ·        │
+│                               Cloudflare Workers AI            │
+│                  stores:      in-memory · Cloudflare Vectorize │
 └────────────────────────────────────────────────────────────────┘
        core/  config · errors · logging · request context
      composition.py  the one place settings become adapters
 ```
 
-Dependencies point inwards. `domain` and `ports` know nothing about HTTP, about FastAPI or about
-any provider SDK, and neither does `rag`.
+Dependencies point inwards. `domain` and `ports` know nothing about HTTP, FastAPI or any provider
+SDK, and neither does `rag`.
 
-**Ingestion is the corpus side; `rag` is the query side.** Everything that turns source material
-into indexable units — parsing, validation, chunking, embedding preparation — belongs to
-`ingestion`. Nothing outside it opens a knowledge file or parses YAML, and within it only the loader
-touches the filesystem: the chunker is a pure function from a document to chunks. Everything that
-happens once a question arrives — the input boundary, retrieval, context, prompting, grounding,
-citations — belongs to `rag`, works through ports, and touches no file and no vendor.
+**Ingestion is the corpus side; `rag` is the query side.** Everything that turns source material into
+indexable units — parsing, validation, chunking, embedding preparation — belongs to `ingestion`.
+Nothing outside it opens a knowledge file or parses YAML, and within it only the loader touches the
+filesystem: the chunker is a pure function from a document to chunks. Everything that happens once a
+question arrives belongs to `rag`, works through ports, and names no vendor.
 
-**`application` orchestrates; `infrastructure` implements.** Indexing composes an embedding
-provider, a vector store and a change plan without knowing which adapters it was handed. Exactly one
-module — `composition.py` — turns settings into concrete adapters, which is why swapping a provider
-is a configuration change rather than a refactor.
+**`application` orchestrates; `infrastructure` implements.** Indexing composes an embedding provider,
+a vector store and a change plan without knowing which adapters it was handed. Exactly one module,
+`composition.py`, turns settings into concrete adapters, which is why swapping a provider is a
+configuration change rather than a refactor.
 
 Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Decisions and their reasoning: [docs/adr/](docs/adr/).
-Security boundaries and residual risks: [docs/SECURITY.md](docs/SECURITY.md).
-Putting it in production: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Request flow
+
+```
+user question
+   ▼
+POST /api/v1/chat                     edge guard + 16 KiB body limit, before routing
+   ▼
+validation                            message length, shape, unknown fields rejected
+   ▼
+query embedding                       mistral-embed; embedding space recorded with the vector
+   ▼
+vector retrieval                      Vectorize, visibility=public built into the query
+   ▼                                  below-threshold matches dropped
+bounded context                       ranked, deduplicated, token-budgeted, labelled,
+   ▼                                  never truncated mid-passage
+LLM generation                        Workers AI, grounding instructions as a system message
+   ▼
+grounding check                       an answer with no verifiable source is not published
+   ▼
+citation validation                   labels resolved against chunks retrieved for this request;
+   ▼                                  unknown labels are dropped and counted
+JSON response                         answer + citations + X-Request-ID
+```
+
+Retrieval that finds nothing above the threshold short-circuits at step four: the generation
+provider is never called, and the response is the insufficient-knowledge answer.
+
+## Engineering roadmap
+
+The system was built in six deliberate phases, each with its own definition of done, so that later
+work extended earlier boundaries instead of restarting them. Objectives and deliverables per phase
+are in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+| Phase | Focus | Status |
+| --- | --- | --- |
+| 1 | Foundation & Architecture — a typed, tested FastAPI application with the boundaries the RAG phases build into | complete |
+| 2 | Reliable Knowledge Ingestion — Markdown and frontmatter into validated, traceable documents | complete |
+| 3 | Structure-Aware Chunking & Chunk Provenance — deterministic retrieval units that keep their structure and origin | complete |
+| 4 | Embeddings & Vector Indexing — versioned embeddings, incremental and provider-agnostic synchronization | complete |
+| 5 | Retrieval & Grounded RAG — public-only retrieval, bounded context, grounding and backend-owned citations | complete |
+| 6 | Final Engineering & Production Readiness — evaluation, adversarial testing, security audit, container and deployment | complete |
+
+Phases 1–5 built the product. **Phase 6 added no features**: it measured the pipeline, attacked it,
+audited it and made it deployable — the work that closed out v1.0.0. There is no Phase 7; further
+behavioural change is a new, explicit version rather than an open-ended phase.
+
+## Key engineering properties
+
+* **Ports and adapters.** `LLMProvider`, `EmbeddingProvider`, `VectorStore` and `ChunkResolver` are
+  the only way out of the core. Provider and store are independent — any supported combination
+  works, and `composition.py` is the single place any of them is chosen
+  ([ADR 0002](docs/adr/0002-provider-agnostic-core.md)).
+* **Structured knowledge ingestion.** Markdown with YAML frontmatter, one topic per file, reviewable
+  in a pull request. Every document declares `schema_version`; a document written against an unknown
+  version is refused rather than half-understood. YAML is parsed only through a `SafeLoader`
+  subclass, and duplicate keys are rejected
+  ([ADR 0004](docs/adr/0004-versioned-markdown-knowledge-format.md)).
+* **Deterministic chunking and provenance.** Documents are cut along their own Markdown structure —
+  headings become a `heading_path`, blocks are packed whole, code fences stay intact. The same
+  corpus produces the same chunks, ids and SHA-256 fingerprints on any machine, with no model in the
+  loop ([ADR 0005](docs/adr/0005-deterministic-structure-aware-chunking.md)).
+* **Public/internal knowledge boundary.** Each document declares a `visibility`. `public` is built
+  into the query the retrieval service sends — it is not a parameter, a policy field or a flag a
+  caller can pass, forget or invert. Chunks are re-checked against the corpus after resolution, so a
+  document reclassified to `internal` stops being retrievable before the index is rebuilt.
+* **Incremental indexing.** An embedding fingerprint decides re-embedding, so a metadata-only change
+  rewrites the record around the vector it already has and costs no provider call. A second run over
+  an unchanged corpus is a true no-op ([ADR 0006](docs/adr/0006-versioned-embeddings-and-incremental-indexing.md)).
+* **Embedding-space identity.** Query and index spaces are compared by `EmbeddingSpec` equality.
+  Equal dimensionality is not compatibility, for indexing or for a query vector.
+* **Grounded generation and backend-owned citations.** Instructions are a system message; passages
+  and the question are a user message. No configuration and no document text can move a passage into
+  the instruction role ([ADR 0007](docs/adr/0007-grounded-retrieval-and-backend-owned-citations.md)).
+* **Bounded provider failure handling.** The Mistral and Workers AI adapters retry a bounded number
+  of transport attempts (3 by default) on retryable statuses, honour a capped `Retry-After`, and
+  fail closed to `503` otherwise. A malformed provider reply produces no answer, and its raw text
+  never reaches the client. Every outbound call is bounded by
+  `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` (default 30s).
+* **Fail-closed production configuration.** With `PORTFOLIO_RAG_ENVIRONMENT=production`, the
+  composition root refuses to build either development stand-in and the process does not start; a
+  production app that requires the edge guard without a secret refuses to start too. CORS wildcards
+  are rejected in every environment. A CI step asserts the first of these against the built image.
 
 ## Tech stack
 
 | Concern | Choice |
 | --- | --- |
-| Language | Python 3.13 |
-| Web framework | FastAPI (ASGI) |
-| Validation / models | Pydantic v2, pydantic-settings |
-| Server | Uvicorn |
-| Frontmatter | PyYAML (`SafeLoader` subclass only) |
-| HTTP client | httpx (Mistral, Workers AI and Vectorize adapters) |
+| Language | Python 3.13 (pinned; a minor upgrade is adopted deliberately, not by a resolver) |
+| Web framework | FastAPI (ASGI), served by Uvicorn |
+| Validation / settings | Pydantic v2, pydantic-settings |
+| Embeddings | Mistral `mistral-embed` — 1024 dimensions, cosine |
+| Vector store | Cloudflare Vectorize |
+| Generation | Cloudflare Workers AI `@cf/openai/gpt-oss-120b` |
+| HTTP client | `httpx2` — one async HTTP library for every adapter and for the test client |
+| Frontmatter | PyYAML, through a `SafeLoader` subclass only |
 | Markdown structure | markdown-it-py (parsing only, never rendering) |
 | CLI | `argparse` (standard library) |
-| Packaging / envs | uv + `pyproject.toml` (Hatchling backend) |
-| Lint & format | Ruff |
-| Type checking | mypy (`strict`) |
-| Tests | pytest + Starlette `TestClient` |
+| Packaging | uv + `pyproject.toml`, Hatchling backend |
+| Lint & format | Ruff (including `flake8-bandit` and `flake8-annotations`) |
+| Type checking | mypy, `strict`, over `src` and `tests` |
+| Tests | pytest + Starlette `TestClient`; `node --test` for the edge worker |
 | CI | GitHub Actions |
-| Container | Docker (`python:3.13-slim`, non-root) |
+| Container | Docker, `python:3.13-slim`, multi-stage, non-root |
+| Hosting | Google Cloud Run |
+| Edge gateway | Cloudflare Worker + Turnstile (`edge/`) |
 
-Seven runtime dependencies, four development dependencies — unchanged since Phase 1. Retrieval, context building, prompting, grounding and citations added none.
+Seven runtime dependencies and four development dependencies, unchanged since the first phase.
+Retrieval, context building, prompting, grounding and citations added none.
 
-## Local setup
+A Mistral chat adapter (`mistral-small-latest`) is implemented and remains selectable, but it is not
+what this deployment generates with.
 
-Requires [uv](https://docs.astral.sh/uv/). uv provisions the Python interpreter itself — the version
-is pinned in `.python-version` — so no system Python of a particular version is needed.
+## HTTP API
 
-```bash
-uv sync
-```
-
-Development tooling is a PEP 735 dependency group, so `uv sync` installs it by default and the
-container image excludes it with `--no-dev`.
-
-Configuration is optional — the defaults are local-development defaults:
-
-```bash
-cp .env.example .env
-```
-
-## Development
-
-Run the API with auto-reload:
-
-```bash
-uv run uvicorn --app-dir src portfolio_rag.main:app --reload --port 8000
-```
-
-`--app-dir src` imports the package straight from the source tree, so development does not depend on
-an editable install being wired up correctly. Tests do the same via pytest's `pythonpath` setting.
-The container image installs the package properly and needs neither.
-
-| Task | Command |
-| --- | --- |
-| Lint | `uv run ruff check .` |
-| Format | `uv run ruff format .` |
-| Format check (CI) | `uv run ruff format --check .` |
-| Type check | `uv run mypy` |
-| Tests | `uv run pytest` |
-| Everything CI runs | `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest` |
-
-## CLI
-
-Ingestion is a developer workflow, not an HTTP endpoint. It is reached through the `portfolio-rag`
-console script:
-
-```bash
-uv run portfolio-rag knowledge validate                  # ingest and report problems
-uv run portfolio-rag knowledge inspect api-integrations  # what ingestion made of one document
-uv run portfolio-rag knowledge chunks api-integrations   # where that document is cut
-uv run portfolio-rag knowledge chunks --all              # corpus-wide chunk statistics
-uv run portfolio-rag knowledge embedding api-integrations  # what would be embedded, and its identity
-uv run portfolio-rag knowledge index --dry-run          # what indexing would change
-uv run portfolio-rag knowledge index                    # make it so
-```
-
-All accept `--root` to point at a different knowledge base. Exit codes: `0` success, `1` invalid
-knowledge base or document not found, `2` usage error, `3` unexpected internal failure — a crash is
-never reported as a clean run. No tracebacks are printed.
-
-```console
-$ portfolio-rag knowledge validate --root tests/fixtures/knowledge/invalid
-Knowledge root: tests/fixtures/knowledge/invalid
-
-✓ 00-claims-an-id.md
-✗ 01-missing-frontmatter.md
-    MISSING_FRONTMATTER  Document does not start with a `---` frontmatter block.
-✗ 03-unsupported-schema-version.md
-    UNSUPPORTED_SCHEMA_VERSION  schema_version: 99 is not supported; this build reads version 1
-✗ 04-invalid-metadata.md
-    INVALID_METADATA  language: String should match pattern '^[a-z]{2}$'
-✗ 06-duplicate.md
-    DUPLICATE_DOCUMENT_ID  id: `contested-id` first claimed by 00-claims-an-id.md
-
-7 documents
-1 valid
-6 errors
-```
-
-One broken document does not hide the others: a batch run reports everything it can find. The
-programmatic entry point, `load_knowledge_base`, is stricter — it raises rather than return a corpus
-that quietly lost documents.
-
-`inspect` reports what the pipeline made of one document — metadata, provenance, content hash and
-size — deliberately not the content itself:
-
-```console
-$ portfolio-rag knowledge inspect alpha --root tests/fixtures/knowledge/valid
-ID             alpha
-Title          Test Document Alpha
-Schema         1
-Type           reference
-Language       en
-Version        1
-Updated        2026-08-07
-Visibility     public
-Trust          verified
-Source         tests/fixtures/knowledge/valid/alpha.md
-Path           alpha.md
-Hash           81b8c029dd6be11205cae87d38645740f1cf0188eaabb4ae064f88633967ce5c
-Characters     234
-Topics         testing, ingestion
-Technologies   Python, Markdown
-```
-
-`chunks` shows where a document is cut into retrieval units, and why — the boundaries, the heading
-path each unit belongs to, its fingerprint, and how much text is repeated from the previous chunk:
-
-```console
-$ portfolio-rag knowledge chunks levels
-Document: Heading Levels
-ID: levels
-
-Policy
-  strategy       markdown-structure-v1
-  target chars   1200
-  max chars      1800
-  overlap chars  150
-
-Chunk 0000
-  ID             levels--0000
-  Heading        —
-  Characters     28
-  Fingerprint    0bb548cc8277d47f17582f43ecc0dc3b5fbdef5126d88092b6ad7c32c6e5a63d
-  Overlap        0
-
-Chunk 0001
-  ID             levels--0001
-  Heading        Backend > APIs
-  Characters     35
-  Fingerprint    f6665828d0ad9036065131b76a4ff4d684a54af8b5fe0fca8ca9d8cf00d21f22
-  Overlap        0
-
-2 chunks
-```
-
-Add `--show-content` to print each chunk's text and check the boundaries by eye. The size budget can
-be overridden per run — `--target-chars`, `--max-chars`, `--overlap-chars` — to compare boundaries
-without changing anything on disk. `--all` reports counts and sizes across the corpus; it refuses to
-run on a knowledge base that has unusable documents, because a partial corpus summarised as a whole
-one would be a lie with numbers on it.
-
-The output deliberately contains no quality score. Structural chunk statistics do not establish
-retrieval quality; that is measured separately against questions with known answers.
-
-### Embedding and indexing
-
-`embedding` shows exactly what would be sent to an embedding provider, and the identity that decides
-whether it has to be sent at all. It makes no request and needs no credentials:
-
-```console
-$ portfolio-rag knowledge embedding guide
-Embedding space
-  provider       deterministic
-  model          sha256-derived-v1
-  dimensions     256
-  representation embedding-text-v1
-
-Chunk 0000
-  Chunk ID       guide--0000
-  Document       guide
-  Heading        Backend > APIs
-  Representation embedding-text-v1
-  Dimensions     256
-  Fingerprint    dacdbeacdff81f1a669b1980b1029dd68561e14ba516d87523cdf49e9d3649b6
-  Characters     70
-
-    │ Integration Guide
-    │
-    │ Backend > APIs
-    │
-    │ REST endpoints are documented here.
-```
-
-Add `--show-text` for the full representation rather than a preview.
-
-`index --dry-run` reads the index and works out what would change, without embedding, writing or
-deleting anything:
-
-```console
-$ portfolio-rag knowledge index --dry-run
-Index plan
-  create              3
-  re-embed            0
-  metadata only       0
-  unchanged           0
-  delete              0
-  embeddings required 3
-
-Dry run: nothing was embedded, written or deleted.
-```
-
-Without `--dry-run` it applies the plan and reports what it did. The distinction between
-**re-embed** and **metadata only** is the one that matters: changing a chunk's text costs an
-embedding, while flipping its `visibility` rewrites the record around the vector it already has. A
-second run over an unchanged corpus is a true no-op — zero provider calls, zero writes.
-
-`--rebuild` re-embeds everything instead of reusing what the index holds. It is the deliberate
-escape hatch when the embedding space itself has changed.
-
-### Asking questions
-
-The query side has its own commands, and they exist because "the answer is wrong" is usually a
-retrieval problem rather than a model problem — and a retrieval step you cannot see is one you
-cannot fix.
-
-`query retrieve` runs everything up to, and not including, the language model. The run below uses
-the test fixture corpus and the offline defaults:
-
-```console
-$ portfolio-rag query retrieve "Which HTTP framework does the service use?" \
-    --root tests/fixtures/knowledge/rag --top-k 1 --min-similarity -1
-Question: Which HTTP framework does the service use?
-
-Embedding space
-  provider       deterministic
-  model          sha256-derived-v1
-  dimensions     256
-  representation embedding-text-v1
-
-Retrieval policy
-  top k          1
-  min similarity -1.000
-  visibility     public (enforced)
-
-Stack
-  generation model context-echo-v1
-  corpus chunks    7
-
-Retrieval
-  matches returned 1
-  below threshold  0
-  unresolved       0
-  withheld         0
-  retrieved        1
-
-Match 1
-  Similarity     0.0546
-  Chunk ID       storage-layer--0001
-  Document       Storage Layer
-  Heading        Storage Layer > Corpus format
-  Source         tests/fixtures/knowledge/rag/storage-layer.md
-  Visibility     public
-
-    │ Knowledge documents are stored as Markdown files.
-
-1 passage
-```
-
-**That match is wrong, and the output shows exactly why.** The similarity is 0.05 — noise — because
-the default embedding provider derives vectors from SHA-256 and understands nothing; the threshold
-had to be disabled to see any result at all. With a real embedding provider the same command ranks
-the passage that mentions FastAPI first. Printing the run as it actually is beats printing a
-plausible one.
-
-Every match reports its **similarity** — never a "confidence" and never a percentage. It is a cosine
-score: it orders results, it does not say how likely an answer is to be correct.
-
-`query answer` runs the whole pipeline and prints what came out of it — retrieval, context, the
-model, and the citations the backend verified:
-
-```console
-$ portfolio-rag query answer "Which HTTP framework does the service use?" \
-    --root tests/fixtures/knowledge/rag --top-k 2 --min-similarity -1
-Answer
-  outcome            answered
-  retrieved          2
-  context sources    2
-  citations          2
-  unknown labels     0
-  retrieval seconds  0.0003
-  generation seconds 0.0000
-  total seconds      0.0003
-
-    │ This is a development stub, not a generated answer. The configured generation
-    │ provider is `deterministic`, which does not produce language. It reports the
-    │ knowledge sources that were retrieved for this question so that the pipeline
-    │ can be inspected end to end.
-
-Sources
-  [1] Storage Layer > Corpus format  (tests/fixtures/knowledge/rag/storage-layer.md)
-  [2] HTTP Stack > HTTP Stack  (tests/fixtures/knowledge/rag/http-stack.md)
-```
-
-The answer text is the development stub saying what it is. Configure
-`PORTFOLIO_RAG_LLM_PROVIDER=cloudflare_workers_ai` (or the supported `mistral` alternative), and the
-same pipeline — same retrieval, same context, same citation validation — produces a real answer over
-the same sources.
-
-`--show-retrieval` adds the ranked passages, and `--show-context` prints the exact context the model
-was given, labels and all. Both are developer tooling: the HTTP API returns none of it, and none of
-it is logged.
-
-### Measuring retrieval
-
-The question "is retrieval any good?" has a reproducible answer rather than an opinion:
-
-```bash
-uv run portfolio-rag eval run                  # retrieval + grounding, configured providers
-uv run portfolio-rag eval run --retrieval-only # no generation provider is called at all
-uv run portfolio-rag eval run --generation-delay-seconds 8   # stay inside a provider's rate limit
-```
-
-It reports hit@1/@3/@5, MRR, threshold calibration and **every failing question by name** — there is
-no single score that could hide one. `evaluation/` holds 24 questions in 8 categories with
-hand-checkable ground truth, and `evaluation/README.md` records what the measurements settled,
-including why the similarity threshold was left exactly where it was.
-
-Read that file before quoting a number from it: the corpus is fixtures, and the offline embedding
-provider has no semantics.
-
-### Providers and stores
-
-The defaults are the offline ones, so everything above runs with no account and no cost:
-
-| Setting | Default | Alternative |
+| Method | Path | Description |
 | --- | --- | --- |
-| `PORTFOLIO_RAG_EMBEDDING_PROVIDER` | `deterministic` | `mistral` |
-| `PORTFOLIO_RAG_LLM_PROVIDER` | `deterministic` | `cloudflare_workers_ai`, `mistral` |
-| `PORTFOLIO_RAG_VECTOR_STORE` | `memory` | `vectorize` |
-
-The two `deterministic` adapters are development stand-ins, and both are honest about it. The
-embedding provider derives stable vectors from SHA-256: real infrastructure for tests, **not a
-semantic model** — similarity between two of its vectors means nothing about meaning, which is why
-the examples above were produced with a provider that does. The generation stub produces no language
-at all; it reports which sources were retrieved and says plainly that it is a stub.
-
-**Neither can be selected in production.** `PORTFOLIO_RAG_ENVIRONMENT=production` with either
-`deterministic` adapter fails at startup, loudly, rather than serving a public page with a
-placeholder. Real providers need their credentials, which come from the environment and are never
-written to disk or baked into the image.
-
-> If the console script cannot find the package (an editable install that did not register), run it
-> from the source tree instead: `PYTHONPATH=src uv run python -m portfolio_rag knowledge validate`.
-
-## API
-
-| Method | Path | Status | Description |
-| --- | --- | --- | --- |
-| `GET` | `/health` | ✅ implemented | Liveness probe. Unversioned on purpose. |
-| `POST` | `/api/v1/chat` | ✅ implemented | Ask a question; get a grounded answer with citations. |
+| `GET` | `/health` | Liveness probe. Unversioned on purpose, and outside the edge guard so a platform probe still works. No dependency checks. |
+| `POST` | `/api/v1/chat` | Ask a question; get a grounded answer with citations. |
 
 ```bash
-curl -s localhost:8000/health
-# {"status":"ok","service":"portfolio-rag-assistant","version":"0.1.0"}
-
 curl -s -X POST localhost:8000/api/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"Which HTTP framework does the service use?"}'
@@ -480,36 +225,19 @@ curl -s -X POST localhost:8000/api/v1/chat \
 }
 ```
 
-Every citation refers to a document that was actually retrieved for that question. A source the
-model merely named is never published — see
-[ADR 0007](docs/adr/0007-grounded-retrieval-and-backend-owned-citations.md).
+When the knowledge base does not cover the question the response is still `200`, with the
+insufficient-knowledge sentence and `citations: []` — that empty list is how a client detects the
+case. The sentence is written by the backend rather than the model, and comes back in the language
+of the question (German or English; English for anything else).
 
-**When the knowledge base does not cover the question**, the response is still `200`:
-
-```json
-{
-  "answer": "I don't have enough information in the available knowledge base to answer that.",
-  "citations": [],
-  "conversation_id": null
-}
-```
-
-That is the honest outcome, not an error, and `citations: []` is how a client detects it. Nothing is
-invented, and no language model is called when retrieval found nothing to ground an answer in.
-
-The sentence is written by the backend, not by the model, and it comes back in the language of the
-question — German or English, English for anything else. Grounded answers already follow the
-question's language because the prompt says so; the refusal used to be the one reply that did not.
-
-**No conversation state.** `conversation_id` is echoed back and nothing more; each question is
+**No conversation state.** `conversation_id` is echoed back and nothing more. Each question is
 answered on its own, from the corpus.
 
 **What a response never contains:** similarity scores, source labels, the assembled context, the
-prompt, the embedding space, vector ids, fingerprints, timings, or the provider and model names.
-All of that exists — in the CLI, in the logs, in tests — and none of it is a public promise.
+prompt, the embedding space, vector ids, fingerprints, timings, or provider and model names. All of
+that exists — in the CLI, in the logs, in tests — and none of it is a public promise.
 
-**Error contract.** Every non-2xx response — validation failures and unexpected errors included —
-uses one envelope:
+**Error contract.** Every non-2xx response uses one envelope:
 
 ```json
 { "error": { "code": "VALIDATION_ERROR", "message": "…", "request_id": "…", "details": [] } }
@@ -517,52 +245,159 @@ uses one envelope:
 
 | Status | Code | When |
 | --- | --- | --- |
+| `403` | `FORBIDDEN` | the request did not come through the edge gateway |
+| `413` | `PAYLOAD_TOO_LARGE` | the body exceeds 16 KiB; it is never parsed |
 | `422` | `VALIDATION_ERROR` | the payload or the question is unusable |
 | `503` | `RETRIEVAL_UNAVAILABLE` | the embedding provider or vector store could not be reached |
 | `503` | `GENERATION_UNAVAILABLE` | the generation provider failed or answered unusably |
 | `500` | `INTERNAL_ERROR` | anything else; nothing about it is disclosed |
 
-`code` is stable and machine-readable; branch on it, not on `message`. Messages never contain
-internal details, provider payloads or stack traces — those are logged, never returned.
+`code` is stable and machine-readable — branch on it, not on `message`. Messages never carry
+internal details, provider payloads or stack traces; those are logged, never returned. Every request
+gets an id, returned in `X-Request-ID` and referenced in error bodies; a well-formed client-supplied
+id is reused.
 
-**Request correlation.** Every request gets an id, returned in the `X-Request-ID` header and
-referenced in error bodies. A client-supplied `X-Request-ID` is reused when it is well-formed.
+OpenAPI is served at `/openapi.json` with Swagger UI at `/docs`, and documents only what the code
+can actually produce.
 
-### OpenAPI
+## Reliability and security
 
-* Swagger UI: <http://localhost:8000/docs>
-* Schema: <http://localhost:8000/openapi.json>
+Full detail, including residual risks, is in [docs/SECURITY.md](docs/SECURITY.md). The summary:
 
-The document is kept honest: nothing is described that is not implemented, and everything that is
-implemented is described. The chat endpoint documents its `200` with the real `ChatResponse` schema
-and the three failures it can produce — and, since Phase 5, no `501`.
+* **Abuse boundary at the edge.** The application has no rate limiter on purpose: it cannot identify
+  a client correctly without knowing the proxy topology, and a limiter that is wrong looks like
+  protection while providing none ([ADR 0008](docs/adr/0008-abuse-boundary-at-the-edge.md)). The
+  Cloudflare Worker in [`edge/`](edge/README.md) verifies a Turnstile token server-side and applies
+  a burst limit (3 / 10s) and a sustained limit (10 / 60s) per IP and route before forwarding.
+* **Origin guard.** `POST /api/v1/chat` refuses any request that did not come through the gateway.
+  The header is compared in constant time before routing, body parsing or dependency resolution, so
+  a rejected request costs one string comparison and no provider call. It authenticates the
+  *gateway*, not a user — there are no accounts here.
+* **Input bounds**, in the order a request meets them: 16 KiB body (before parsing), 2000 characters
+  per message (HTTP schema), 4000 characters per query (the pipeline's own bound, which also applies
+  to the CLI). Empty, whitespace-only and invisible-only messages are rejected before any provider
+  call; unknown fields are rejected rather than ignored; a rejected value is never echoed back.
+* **Nothing is scrubbed.** Angle brackets, braces, backticks and quotes survive, because
+  `How is <T> serialized?` is a legitimate question here and the message never reaches a shell, a
+  path, a template or a query.
+* **Logging.** Never logged at any level: the question, the context, the prompt, the answer,
+  embedding vectors, credentials, `Authorization` headers, provider response bodies, internal
+  knowledge. Provider error messages are composed locally from a status code and the operation, so a
+  provider that returns a secret in an error body cannot put it in a log line.
+* **Prompt injection is not solved** — nothing solves it. What is demonstrated, against a model
+  scripted to have fallen for a hostile knowledge document completely, is that such a document
+  cannot become a system message, change the retrieval policy, authorise a citation, or reach
+  internal knowledge — and that an answer it induced is not published, because none of its claimed
+  sources verify.
+* **Secrets** come from the environment or a secret store. Nothing is baked into the image, and the
+  container carries no credential.
 
-## Knowledge base
+## Evaluation and testing
 
-`knowledge/` holds the source documents the assistant is grounded in: Markdown with YAML
-frontmatter, one topic per file, reviewable in a pull request. The format, the required frontmatter
-fields, the id rules and the discovery rules are specified in
-[knowledge/README.md](knowledge/README.md) and **enforced** by `portfolio-rag knowledge validate`.
+Retrieval quality is measured rather than asserted:
 
-Every document declares `schema_version: 1`; a document written against a version this build does
-not know is refused rather than half-understood ([ADR 0004](docs/adr/0004-versioned-markdown-knowledge-format.md)).
-Ingestion is deterministic: the same corpus produces the same documents and the same chunks, in the
-same order, with the same SHA-256 fingerprints, on any machine.
+```bash
+uv run portfolio-rag eval run                    # retrieval + grounding, configured providers
+uv run portfolio-rag eval run --retrieval-only   # no generation provider is called at all
+uv run portfolio-rag eval run --generation-delay-seconds 8   # pace a run inside a rate limit
+```
 
-Documents are then cut into retrieval units along their own Markdown structure — headings become a
-`heading_path`, blocks are packed whole, code fences stay intact, and every chunk carries its
-document's metadata and provenance so nothing downstream has to reopen the file
-([ADR 0005](docs/adr/0005-deterministic-structure-aware-chunking.md)).
+The runner reports hit@1/@3/@5, MRR, a similarity-threshold sweep and **every failing question by
+name** — there is no single score that could hide one. `evaluation/` holds two datasets: 24 questions
+in 8 categories against a neutral fixture corpus, and a larger set against the real corpus. Ground
+truth is a document id plus a section heading, never a chunk id, so the dataset survives a
+re-chunking.
 
-Each document declares a `visibility`, and it is load-bearing: `public` documents are the only ones
-a chat request can retrieve, and that is enforced in the shape of the query rather than by a filter
-somebody could forget.
+Read [evaluation/README.md](evaluation/README.md) before quoting any number from it: the recorded
+measurements were taken against the fixture corpus, and retrieval parameters are provider-specific.
+`min_similarity` measured under one embedding model says nothing under another, which is why the
+threshold is changed only from a measurement and never to make a benchmark look better.
 
-The directory ships with a template only; no content has been invented.
+The automated gate is what CI runs on every push and pull request:
 
-## Docker
+```bash
+uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+```
 
-Run the image with the offline stack, which needs no credentials:
+CI adds a second job: build the image, start it on the offline stack, and assert that `/health` is
+`ok`, that `/openapi.json` describes `/api/v1/chat`, and that the endpoint answers a real request —
+then assert that the same image *refuses to start* in production with a development stand-in
+configured.
+
+Tests are organised by what they protect: `tests/unit/` (models, config, errors, ports, ingestion,
+chunking, retrieval, adapters), `tests/integration/` (HTTP behaviour, indexing, the full RAG flow,
+adversarial and hostile input, the provider failure matrix, composition, the CLI),
+`tests/evaluation/` (the dataset as a regression guard, with real metrics), `tests/contracts/`
+(behavioural contracts every adapter must satisfy) and `tests/live/` (opt-in, against real
+providers, skipped without credentials). At v1.0.0 the suite collects 1659 tests; a standard run
+passes 1654 and skips the 5 live ones. Nothing in CI needs a credential, a network or a cent.
+
+## Local development
+
+Requires [uv](https://docs.astral.sh/uv/), which provisions the pinned interpreter itself — no
+system Python of a particular version is needed.
+
+```bash
+uv sync                  # dev tooling is a PEP 735 group, installed by default
+cp .env.example .env     # optional; the defaults are local-development defaults
+uv run uvicorn --app-dir src portfolio_rag.main:app --reload --port 8000
+```
+
+The defaults are entirely offline — a deterministic embedding provider, a deterministic generation
+stub and an in-memory vector store — so everything below runs with no account, no key and no cost:
+
+| Setting | Default | Alternatives |
+| --- | --- | --- |
+| `PORTFOLIO_RAG_EMBEDDING_PROVIDER` | `deterministic` | `mistral` |
+| `PORTFOLIO_RAG_LLM_PROVIDER` | `deterministic` | `cloudflare_workers_ai`, `mistral` |
+| `PORTFOLIO_RAG_VECTOR_STORE` | `memory` | `vectorize` |
+
+Both stand-ins are honest about being stand-ins. The embedding provider derives stable vectors from
+SHA-256 — real infrastructure for tests, **not a semantic model**, so similarity between two of its
+vectors means nothing about meaning and nothing clears the default threshold. The generation stub
+produces no language at all; it reports which sources were retrieved and says plainly what it is.
+Neither can be selected in production.
+
+### CLI
+
+Ingestion, indexing and inspection are developer workflows, not HTTP endpoints. They are reached
+through the `portfolio-rag` console script, and all accept `--root` to point at a different
+knowledge base:
+
+```bash
+uv run portfolio-rag knowledge validate            # ingest the corpus, report every problem found
+uv run portfolio-rag knowledge inspect <id>        # metadata, provenance, hash — not the content
+uv run portfolio-rag knowledge chunks <id>         # where a document is cut (--show-content, --all)
+uv run portfolio-rag knowledge embedding <id>      # exactly what would be embedded, and its identity
+uv run portfolio-rag knowledge index --dry-run     # what indexing would change; zero provider calls
+uv run portfolio-rag knowledge index               # apply the plan (--rebuild re-embeds everything)
+uv run portfolio-rag query retrieve "…"            # everything up to, and not including, the model
+uv run portfolio-rag query answer "…"              # the whole pipeline (--show-retrieval, --show-context)
+```
+
+Exit codes: `0` success, `1` invalid knowledge base or document not found, `2` usage error, `3`
+unexpected internal failure — a crash is never reported as a clean run, and no tracebacks are
+printed.
+
+Two design notes worth knowing. `validate` reports everything it can find rather than stopping at
+the first broken document, while the programmatic entry point `load_knowledge_base` raises instead of
+returning a corpus that quietly lost documents. And the query commands exist because "the answer is
+wrong" is usually a retrieval problem: every match reports its **similarity**, which is a cosine
+score that orders results — never a confidence and never a percentage. `--show-retrieval` and
+`--show-context` are developer tooling; the HTTP API returns none of it and none of it is logged.
+
+If the console script cannot import the package, run it from the source tree:
+`PYTHONPATH=src uv run python -m portfolio_rag knowledge validate`.
+
+| Task | Command |
+| --- | --- |
+| Lint | `uv run ruff check .` |
+| Format | `uv run ruff format .` |
+| Type check | `uv run mypy` |
+| Tests | `uv run pytest` |
+| Edge worker tests | `node --test edge/test` |
+
+### Container
 
 ```bash
 docker build -t portfolio-rag-assistant .
@@ -570,139 +405,98 @@ docker run --rm -p 8000:8000 \
   -e PORTFOLIO_RAG_ENVIRONMENT=local \
   -e PORTFOLIO_RAG_ALLOWED_ORIGINS=http://localhost:5173 \
   portfolio-rag-assistant
-curl -s localhost:8000/health
 ```
 
-A production run has to name real providers — the container refuses to start on development
-stand-ins, which is the point:
+The image defaults to `PORTFOLIO_RAG_ENVIRONMENT=production`, so a local run has to say `local`
+explicitly — a production container refuses to start on development stand-ins. It runs as a
+non-root user, installs from the lockfile, carries no secrets, and reads `PORT` from the environment
+so a platform that injects one (Cloud Run injects 8080) is served correctly. The corpus ships inside
+it, because retrieved passages are resolved back to their text locally rather than stored in the
+vector store. There is no Compose file: there is one runtime component.
 
-```bash
-docker run --rm -p 8000:8000 \
-  -e PORTFOLIO_RAG_ENVIRONMENT=production \
-  -e PORTFOLIO_RAG_ALLOWED_ORIGINS=https://your-portfolio.example \
-  -e PORTFOLIO_RAG_EMBEDDING_PROVIDER=mistral \
-  -e PORTFOLIO_RAG_LLM_PROVIDER=mistral \
-  -e PORTFOLIO_RAG_MISTRAL_API_KEY="$MISTRAL_API_KEY" \
-  portfolio-rag-assistant
-```
+The full production procedure — provider accounts, creating the Vectorize index at a matching
+dimensionality, indexing the corpus offline, measuring retrieval against the real embedding model,
+Cloud Run settings, and arming the edge gateway — is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-The image runs as a non-root user, contains no secrets and installs dependencies from the lockfile.
-Its entrypoint is the production start command:
-
-```bash
-uvicorn portfolio_rag.main:app --host 0.0.0.0 --port 8000
-```
-
-There is no Docker Compose file — there is only one runtime component.
-
-## Project structure
+## Repository structure
 
 ```
 src/portfolio_rag/
   main.py               ASGI application factory — the HTTP entry point
   cli.py                developer CLI — the terminal entry point
-  api/
-    router.py           composition of the HTTP surface
-    error_handlers.py   exceptions → the public error envelope
-    routes/             health.py, chat.py
-    schemas/            request/response models
-    middleware/         request id + access logging
-  ingestion/
-    loader.py           the public entry point: collect / load a knowledge base
-    discovery.py        which files are documents, in a stable order
-    frontmatter.py      split the YAML block, parse it safely
-    metadata.py         schema version gate + field validation
-    normalization.py    UTF-8, BOM, line endings, Unicode NFC
-    provenance.py       canonical form and SHA-256 document hash
-    errors.py           ingestion error taxonomy
-    embedding.py        the embedding representation + its fingerprint
-    chunking/
-      chunker.py        chunk_document / chunk_knowledge_base — pure functions
-      structure.py      Markdown headings and blocks, sliced from the source
-      packing.py        block packing, oversized fallback, overlap
-      policy.py         the character budget + strategy version
-      fingerprint.py    chunk id and SHA-256 chunk fingerprint
-      statistics.py     counts and sizes for developer inspection
-  application/
-    indexing/           desired state, index plan, convergent synchronization
-  evaluation/           dataset model, retrieval metrics, evaluation runners
-  rag/
-    query.py            the input boundary + the query representation
-    policy.py           top-k, similarity threshold, context budget
-    retrieval.py        public-only search, threshold, chunk resolution
-    context.py          bounded, labelled, deterministic context building
-    prompt.py           the grounded prompt + its version
-    generation.py       parsing the structured answer contract
-    citations.py        backend-owned citation validation
-    service.py          the orchestrator: question in, grounded answer out
-    tokens.py           the documented token estimate
-    errors.py           query-side error taxonomy
-  infrastructure/
-    embedding/          deterministic (offline) and Mistral adapters
-    llm/                deterministic stub (offline), Mistral and Workers AI chat adapters
-    vector_store/       in-memory reference and Cloudflare Vectorize adapters
-    knowledge/          in-process corpus snapshot behind the ChunkResolver port
   composition.py        settings → adapters, in one place
+  api/                  routes, schemas, error handlers, request-id and gate middleware
+  ingestion/            discovery · frontmatter · metadata · normalization · provenance
+    chunking/           structure · packing · policy · fingerprint · statistics
+    embedding.py        the embedding representation and its fingerprint
+  application/indexing/ desired state, index plan, convergent synchronization
+  rag/                  query · policy · retrieval · context · prompt · generation ·
+                        citations · language · service · tokens
+  evaluation/           dataset model, retrieval metrics, evaluation runners, pacing
+  infrastructure/       embedding/ · llm/ · vector_store/ · knowledge/ adapters
   core/                 config, error taxonomy, logging, request context
   domain/               KnowledgeDocument, KnowledgeChunk, RetrievedChunk, SourceCitation
   ports/                LLMProvider, EmbeddingProvider, VectorStore, ChunkResolver
-knowledge/              knowledge document standard + template
-tests/unit/             models, config, errors, ports, ingestion, chunking, retrieval, adapters
-tests/integration/      HTTP behaviour, indexing, the full RAG flow, adversarial input, the failure
-                        matrix, hostile input, composition, the CLI
-tests/evaluation/       the dataset as a regression guard, with real metrics
-tests/contracts/        reusable behavioural contracts every adapter must satisfy
-tests/doubles.py        scripted and lexical test adapters, for branches a real provider cannot take
-tests/live/             opt-in tests against real providers; skipped without credentials
-tests/fixtures/         small neutral knowledge bases: valid, broken on purpose, and query-side
-evaluation/             the question set, its fixture corpus, and what was measured
+knowledge/              the corpus, its format standard and a template
+evaluation/             the question sets, the fixture corpus, and what was measured
+edge/                   the Cloudflare Worker gateway and its tests
+tests/                  unit · integration · evaluation · contracts · live · fixtures
 docs/                   ARCHITECTURE.md, ROADMAP.md, SECURITY.md, DEPLOYMENT.md, adr/
-.claude/skills/         repository-specific review workflows
 ```
 
-## Architecture principles
+The knowledge format — required frontmatter fields, id rules, discovery rules — is specified in
+[knowledge/README.md](knowledge/README.md) and enforced by `portfolio-rag knowledge validate`.
 
-1. **Modular monolith.** One deployable, real module boundaries. Extraction stays possible; nothing
-   is distributed without a reason ([ADR 0001](docs/adr/0001-modular-monolith.md)).
-2. **Provider-agnostic core.** External AI and storage systems are reached through ports; no SDK is
-   imported by the core ([ADR 0002](docs/adr/0002-provider-agnostic-core.md)).
-3. **Portable runtime.** FastAPI/ASGI is the application boundary. Cloudflare is a possible
-   deployment target, not a dependency ([ADR 0003](docs/adr/0003-fastapi-portable-runtime.md)).
-4. **Own the RAG mechanics.** Chunking, retrieval, ranking, grounding and evaluation are written
-   here, not delegated to a framework, because that is where answer quality is won or lost.
-5. **Versioned, git-native knowledge.** The corpus is reviewable Markdown; the index is derived data
-   that can always be rebuilt from it ([ADR 0004](docs/adr/0004-versioned-markdown-knowledge-format.md)).
-6. **Deterministic corpus processing.** The same documents produce the same chunks, ids and
-   fingerprints on any machine, with no model in the loop
-   ([ADR 0005](docs/adr/0005-deterministic-structure-aware-chunking.md)).
-7. **Grounded, and only grounded.** An answer comes from retrieved public passages or it does not
-   come at all; citations are built by the backend from what was actually retrieved
-   ([ADR 0007](docs/adr/0007-grounded-retrieval-and-backend-owned-citations.md)).
-8. **Honest surface.** Documentation and OpenAPI describe what exists today. Nothing here claims to
-   be hallucination-free, and no score is presented as a confidence.
+## Architecture decisions
 
-## Roadmap
+Decisions that would be expensive to reverse are recorded in [docs/adr/](docs/adr/), one file per
+decision, written when the decision was made rather than rationalised afterwards:
 
-| Phase | Focus | Status |
-| --- | --- | --- |
-| 1 | Foundation & Architecture | ✅ complete |
-| 2 | Reliable Knowledge Ingestion | ✅ complete |
-| 3 | Structure-Aware Chunking & Chunk Provenance | ✅ complete |
-| 4 | Embeddings & Vector Indexing | ✅ complete |
-| 5 | Retrieval & Grounded RAG | ✅ complete |
-| 6 | Final Engineering & Production Readiness | ✅ complete |
+| ADR | Decision |
+| --- | --- |
+| [0001](docs/adr/0001-modular-monolith.md) | Modular monolith instead of microservices |
+| [0002](docs/adr/0002-provider-agnostic-core.md) | External AI and storage systems are reached through ports |
+| [0003](docs/adr/0003-fastapi-portable-runtime.md) | FastAPI/ASGI is the portable core; Cloudflare is a deployment target |
+| [0004](docs/adr/0004-versioned-markdown-knowledge-format.md) | Knowledge lives in versioned Markdown with YAML frontmatter |
+| [0005](docs/adr/0005-deterministic-structure-aware-chunking.md) | Deterministic, structure-aware chunking |
+| [0006](docs/adr/0006-versioned-embeddings-and-incremental-indexing.md) | Versioned embedding representation and incremental indexing |
+| [0007](docs/adr/0007-grounded-retrieval-and-backend-owned-citations.md) | Grounded retrieval, public by construction, backend-owned citations |
+| [0008](docs/adr/0008-abuse-boundary-at-the-edge.md) | The public abuse boundary lives at the deployment edge |
 
-Six phases, five of which built the product. Phase 6 added no features: it measured the pipeline,
-attacked it, audited it and wrote down how to deploy it. There is no Phase 7.
+The trail matters more than the snapshot: superseding beats editing, so an ADR that stops being true
+is marked superseded rather than quietly rewritten.
 
-Objectives, definitions of done, and what is deliberately *not* being built —  conversation memory,
-agents, re-ranking, hybrid search — are in [docs/ROADMAP.md](docs/ROADMAP.md).
+## Deliberate non-goals
 
-## Contributing agents
+Complexity is not added to make the architecture look larger. Each of these was considered and
+declined, with the reasoning in [docs/ROADMAP.md](docs/ROADMAP.md):
 
-This repository is worked on by both humans and coding agents. Engineering rules that apply to
-everyone live in [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the short orientation file for
-Claude Code.
+* **No orchestration framework** — LangChain, LlamaIndex and Haystack are not used. Chunking,
+  retrieval, ranking, grounding and evaluation are where answer quality is won or lost, and they are
+  written here so they can be measured and changed.
+* **No microservices.** One deployable with real module boundaries. Extraction stays possible;
+  nothing is distributed without a reason.
+* **No conversation memory, chat history or database.** The assistant answers one question at a time
+  from a fixed corpus. Multi-turn state is a product decision nobody has made.
+* **No agents or tool use.** There is one job: answer from the corpus, or say it cannot.
+* **No re-ranking, hybrid/BM25 search or query rewriting.** Real techniques, but evaluation found
+  the limiting factor to be threshold calibration under a specific embedding model rather than
+  ranking, so none of them is justified yet.
+* **No abstraction without a caller** — no package, interface or configuration field exists for a
+  future that has not arrived.
+* **No world-knowledge fallback, and no audit trail.** If the corpus does not support an answer, the
+  system says so. Nothing records who asked what, deliberately: there is no user to attribute a
+  question to, and storing questions would create a privacy obligation the system does not need.
+
+## Development workflow
+
+Engineering rules that apply to every contributor are in [AGENTS.md](AGENTS.md);
+[CLAUDE.md](CLAUDE.md) is a short orientation file, and `.claude/skills/` holds repository-specific
+review checklists (architecture, API, security, test gate).
+
+The repository was developed with human direction and AI-assisted coding and review. Every change
+went through the same gate as any other: Ruff, mypy `strict`, the test suite, and the ADR trail for
+anything structural.
 
 ## License
 

@@ -128,12 +128,18 @@ validation, and `allow_credentials` is `False` because there is no cookie or cre
 
 ## 7. Residual risks, named
 
-* **No rate limit until the edge is configured.** A deployment that skips it can have its free-tier
-  quota drained. The consequence is `503`s, not exposure.
+* **No rate limit in the application itself.** The current deployment has the gateway in front of it
+  and the origin guard armed, but any deployment that skips either can have its free-tier quota
+  drained. The consequence is `503`s, not exposure.
 * **Prompt injection via a hostile knowledge document** can influence answer *text*. Sources remain
   backend-verified.
-* **Retrieval quality on the production embedding model is unmeasured** — the corpus does not exist
-  yet. The harness is there; running it is a deployment step.
+* **A retrieval measurement ages.** The real corpus has been evaluated on the production path
+  (`mistral-embed` into Vectorize) and `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` is set from that
+  rather than guessed — but a measurement is only valid for the corpus, model and chunking policy it
+  was taken on. Change any of those without re-running
+  [step 4 of DEPLOYMENT.md](DEPLOYMENT.md#4-measure-retrieval-against-the-real-corpus) and the
+  threshold silently stops meaning what it meant. What that risks is a thin or over-eager retrieval
+  set, not an unsupported answer — the grounding path is what refuses.
 * **The similarity threshold cannot distinguish an out-of-scope question from an in-scope one**
   (measured, see `evaluation/README.md`). The grounding path is what refuses, and it is the part
   that must not be weakened.

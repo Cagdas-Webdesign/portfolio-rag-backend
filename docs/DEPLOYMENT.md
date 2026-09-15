@@ -1,10 +1,38 @@
 # Deployment
 
-What the owner has to do to put this in front of a real portfolio. Nothing here has been executed:
-no account exists, no Vectorize index has been provisioned, nothing is deployed.
+This document does two jobs, and they are kept apart on purpose:
+
+* **Current state** — what is deployed and running today, at v1.0.0.
+* **The procedure** — steps 0–8, reproducible for the next release or for rebuilding the deployment
+  from scratch.
 
 Every environment variable named below is real — copied from `portfolio_rag.core.config.Settings`,
 not invented for the document. No value shown is a credential.
+
+## Current state — v1.0.0
+
+| | |
+| --- | --- |
+| Release | v1.0.0, the frozen production baseline |
+| Origin | Docker container on Google Cloud Run |
+| Front door | Cloudflare Worker edge gateway ([`../edge/`](../edge/README.md)) |
+| Generation | Cloudflare Workers AI — `@cf/openai/gpt-oss-120b` |
+| Embeddings | Mistral — `mistral-embed` |
+| Vector store | Cloudflare Vectorize |
+| Corpus | `knowledge/`, indexed into the production index |
+| Retrieval | evaluated against the real corpus on the production path; `top_k` 5, `min_similarity` 0.250 |
+| Verification | the [step 7](#7-verify) smoke test completed successfully — `/health`, a grounded answer with citations, and the controlled refusal path |
+
+Account ids, index names, tokens, secrets and service URLs are deployment configuration and are
+deliberately absent from this repository. They live in the provider dashboards, in Worker secrets and
+in Google Secret Manager.
+
+The retrieval row above comes from step 4, run on this exact path with
+`evaluation/portfolio-questions.yaml`. It is a measured configuration rather than a guess — not a
+claim that it is optimal: a corpus change, a model change or a re-chunk invalidates it, and the
+dataset is re-run rather than assumed ([../evaluation/README.md](../evaluation/README.md)).
+
+## The procedure
 
 ```
 Portfolio front end  ──HTTPS──▶  edge (TLS + rate limit)  ──▶  FastAPI container
@@ -90,10 +118,13 @@ not a bug to be abstracted away.
 
 ## 4. Measure retrieval against the real corpus
 
-**Do this before going live, not after.** Every retrieval number this project has was measured on
-fixtures with a non-semantic embedding — see [../evaluation/README.md](../evaluation/README.md). The
-similarity threshold in particular is provider-specific and its current value is a starting point,
-not a measurement.
+**Done for v1.0.0, and repeatable.** The similarity threshold is provider-specific: a value tuned
+against one embedding model means nothing under another, so it is set from a run on the model
+actually in use rather than carried over. The fixture-corpus figures in
+[../evaluation/README.md](../evaluation/README.md) do not transfer, and are not what this step reads.
+
+Re-run it whenever the corpus changes materially, the embedding model changes, or the chunking
+policy changes — those are the three things that invalidate a retrieval measurement.
 
 The real-corpus dataset is `evaluation/portfolio-questions.yaml`. Run it with the production
 embedding configuration:
@@ -103,7 +134,10 @@ uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml
 ```
 
 Then set `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` from what the sweep shows, rather than leaving a
-number nobody has checked against the model actually in use.
+number nobody has checked against the model actually in use. The current deployment runs at the
+shipped default, `0.250`. Note what a threshold can and cannot do: it filters noise, not topic. What
+keeps an unsupported answer from being published is the grounding path, and no threshold value
+substitutes for it.
 
 ## 5. Run the backend
 
@@ -147,7 +181,7 @@ the process does not start. A production deployment cannot silently serve placeh
 | `PORTFOLIO_RAG_MISTRAL_EMBEDDING_MODEL` | optional | default `mistral-embed` |
 | `PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_CHAT_MODEL` | optional | default `@cf/openai/gpt-oss-120b` |
 | `PORTFOLIO_RAG_MISTRAL_CHAT_MODEL` | optional | default `mistral-small-latest`; only read when the Mistral chat adapter is selected |
-| `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` | set it after step 4 | default 0.25, unmeasured for this model |
+| `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` | optional | default 0.25; production runs at that value, evaluated in step 4 |
 | `PORTFOLIO_RAG_RETRIEVAL_TOP_K` | optional | default 5 |
 | `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` | optional | default 30 |
 | `PORTFOLIO_RAG_KNOWLEDGE_ROOT` | optional | default `knowledge` |
@@ -232,8 +266,8 @@ the repository.
 
 ### The request timeout
 
-Cloud Run's default request timeout is **300 seconds**. Nothing in this repository sets it, and no
-value has been chosen yet.
+Cloud Run's default request timeout is **300 seconds**. Nothing in this repository sets it — it is
+service configuration, set on the Cloud Run service itself.
 
 For one RAG request that is far too long. The application's own bound is
 `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS`, default **30s**, applied per provider call — and a single
@@ -249,16 +283,27 @@ precisely because `--concurrency=8` and `--max-instances=3` mean there are only 
 gcloud run services update portfolio-rag --timeout=90
 ```
 
-This is a recommendation, not a change: the value is yours to set, and nothing here has set it.
+This is a recommendation, not a change: the value belongs to the Cloud Run service, and nothing in
+this repository sets or reads it.
 
 ## 7. Verify
 
+The production smoke test. It was run against v1.0.0 and completed successfully — `/health`, a
+grounded answer carrying citations, and the controlled refusal for a question the corpus does not
+cover. Re-run it after every deployment: it is cheap, and it is the only check that exercises the
+real providers end to end.
+
 ```bash
-curl -fsS https://your-backend.example/health
-curl -fsS -X POST https://your-backend.example/api/v1/chat \
+curl -fsS https://<origin-host>/health
+curl -fsS -X POST https://<origin-host>/api/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"<a question your corpus answers>"}'
 ```
+
+`/health` is outside the guard, so it answers unconditionally. The chat call does not: once the edge
+is armed (step 6), the origin needs the gateway header and the gateway needs a fresh Turnstile
+token, so run the second request through whichever of the two you are testing, with what that layer
+requires. A `403` with no header is the guard working, not a failure.
 
 Check, in order:
 

@@ -11,9 +11,11 @@ Two rules govern the sequence:
 * **Nothing from a later phase is implemented early.** Speculative work is the main way an
   architecture rots before it is used.
 
-**All six phases are complete.** Phase 6 closed the plan: the pipeline is measured, adversarially
-tested, hardened where measurement justified it, and documented for deployment. What follows is an
-independent code audit and the owner's deployment steps — not a seventh phase.
+**All six phases are complete, and v1.0.0 is deployed.** Phase 6 closed the plan: the pipeline is
+measured, adversarially tested, hardened where measurement justified it, and taken to production —
+a Docker container on Google Cloud Run behind a Cloudflare Worker edge gateway
+([DEPLOYMENT.md](DEPLOYMENT.md)). What follows is not a seventh phase: further behavioural change is
+an explicit, scoped, versioned change rather than a continuation of this plan.
 
 Cost constraint across all phases: €0. Any phase that would require paid infrastructure gets a free
 alternative or is redesigned.
@@ -175,7 +177,7 @@ one pipeline, and they were built as one.
 * `PublicRetrievalService`: `visibility=public` built into the query it sends, with no parameter,
   policy field or override that can turn it off
 * Embedding-space compatibility checked by identity before any search
-* `RetrievalPolicy` — `top_k` and a minimum similarity, both starting values, both central
+* `RetrievalPolicy` — `top_k` and a minimum similarity, starting values at the time, both central
 * `ChunkResolver` port and an in-process corpus snapshot, so a match becomes real text without
   duplicating the corpus into vector metadata
 * Deterministic ordering: similarity descending, chunk id as the tie-break

@@ -42,8 +42,9 @@ provider, the LLM provider, a database or object storage — and never gets one.
 can do is expressed in the public REST API, which means credentials, retrieval policy and
 grounding rules stay on the server where they can be enforced.
 
-**Today** the portfolio still talks to its existing Cloudflare Worker. Nothing in that setup
-changes: this service is built alongside it, and integrating it is not part of the current plan.
+**Today** this service is deployed, and the portfolio is its client — reaching it through the
+Cloudflare Worker edge gateway rather than directly. The portfolio remains a separate repository:
+no frontend source, frontend architecture or frontend roadmap belongs here.
 
 ## 2. Layers and their responsibilities
 
@@ -504,19 +505,24 @@ below it is portable Python that runs anywhere ASGI runs — Uvicorn locally, Uv
 ASGI host in production.
 
 Cloudflare is an attractive *deployment* target (Workers, Vectorize, D1, R2, a generous free tier
-and the portfolio already lives there). It is not an architectural dependency. The plan:
+and the portfolio already lives there), and parts of it are in use: Vectorize as the vector store,
+Workers AI for generation, a Worker as the edge gateway. It is still not an architectural
+dependency — the origin itself runs as a plain ASGI container on Cloud Run. The rules that keep it
+that way:
 
 * Provider-specific code lives in `infrastructure`, behind the ports — a `VectorizeVectorStore` is
   one adapter among possible others.
 * No Cloudflare binding, SDK or runtime assumption may appear in `api`, `application`, `rag`,
   `domain`, `ports` or `core`.
-* Deployment-shaped constraints (bundle size, cold starts, request limits) are evaluated when
-  deployment is actually on the table, not designed around speculatively.
+* Deployment-shaped constraints (bundle size, cold starts, request limits) were evaluated when
+  deployment was actually on the table, not designed around speculatively.
 * Docker remains a supported target permanently, which is the practical test that the core has not
   quietly acquired a platform dependency.
 
-Nothing has been provisioned: no Vectorize index, no D1 database, no R2 bucket, no deployment. See
-[ADR 0003](adr/0003-fastapi-portable-runtime.md).
+What is provisioned: a Vectorize index, Workers AI, the Worker gateway, and the Cloud Run service
+that runs the container. No D1 database and no R2 bucket — neither is used by this service. See
+[ADR 0003](adr/0003-fastapi-portable-runtime.md), whose Context records what was true when the
+decision was made.
 
 ## 8. What exists today
 
@@ -549,6 +555,7 @@ Nothing has been provisioned: no Vectorize index, no D1 database, no R2 bucket, 
 | Adversarial and failure-matrix test suites | implemented |
 | Rate limiting / abuse protection | deliberately at the deployment edge ([ADR 0008](adr/0008-abuse-boundary-at-the-edge.md)) |
 | Conversation state, persistence, agents, tool calling | deliberately not planned |
+| Production deployment: Docker container on Google Cloud Run, behind the Cloudflare Worker edge gateway | running at v1.0.0 |
 
 ## Related documents
 
@@ -562,7 +569,7 @@ Nothing has been provisioned: no Vectorize index, no D1 database, no R2 bucket, 
 * [adr/0007-grounded-retrieval-and-backend-owned-citations.md](adr/0007-grounded-retrieval-and-backend-owned-citations.md)
 * [adr/0008-abuse-boundary-at-the-edge.md](adr/0008-abuse-boundary-at-the-edge.md)
 * [SECURITY.md](SECURITY.md) — what is enforced structurally, and what remains a risk
-* [DEPLOYMENT.md](DEPLOYMENT.md) — the manual steps to put this in front of a portfolio
+* [DEPLOYMENT.md](DEPLOYMENT.md) — the current deployment, and the procedure that reproduces it
 * [../evaluation/README.md](../evaluation/README.md) — how retrieval and grounding were measured
 * [../knowledge/README.md](../knowledge/README.md) — knowledge document standard
 * [../AGENTS.md](../AGENTS.md) — engineering rules for humans and agents

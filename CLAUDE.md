@@ -5,17 +5,28 @@ file, it is not repeated here.
 
 ## What this is
 
-A provider-agnostic RAG backend platform. First client: an existing React/Vite portfolio whose chat
-UI currently talks to a Cloudflare Worker. That portfolio is a **separate repository and must not be
-touched** — integrating it is not part of the current plan.
+A provider-agnostic RAG backend platform. This repository is the **backend only**. Its client is an
+existing React/Vite portfolio, which is a **separate repository and must not be touched** — no
+change here may edit, generate or assume frontend source.
 
-**All six phases are complete. Functional development is finished.** The pipeline is built,
-measured (`evaluation/`), adversarially tested, audited and documented for deployment.
+**All six phases are complete, and v1.0.0 is the frozen production baseline.** The pipeline is
+built, measured (`evaluation/`), adversarially tested and audited.
 
-**There is no Phase 7.** What comes next is an independent code audit and the owner's manual
-deployment steps ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)) — not new features. Do not add
-retrieval techniques, providers, endpoints or infrastructure without being asked. If a change is
-only "this could be prettier", record it for the audit rather than making it.
+**It is deployed and running.** A Docker container on Google Cloud Run, behind a Cloudflare Worker
+edge gateway, with production smoke tests completed successfully
+([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)):
+
+| Concern | Production |
+| --- | --- |
+| Generation | Cloudflare Workers AI — `@cf/openai/gpt-oss-120b` |
+| Embeddings | Mistral — `mistral-embed` |
+| Vector store | Cloudflare Vectorize |
+
+**There is no Phase 7.** Functional development is finished, and nothing gets added under the
+heading of an implied next phase. Do not add retrieval techniques, providers, endpoints or
+infrastructure without being asked. Any behavioural change to a released system is an explicit,
+versioned change — proposed, scoped and agreed first, never slipped in as continuation of the
+roadmap. If a change is only "this could be prettier", record it rather than making it.
 
 ## Commands
 

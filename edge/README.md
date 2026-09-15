@@ -28,7 +28,7 @@ check above. A request that fails any of them never crosses the network.
 ## What the frontend has to send
 
 The portfolio frontend is a separate repository and is **not** changed by this.
-When it is wired up, it must:
+The frontend must:
 
 1. Render the Turnstile widget with the **site key** (public, safe to ship).
 2. On submit, take the token the widget produces.
