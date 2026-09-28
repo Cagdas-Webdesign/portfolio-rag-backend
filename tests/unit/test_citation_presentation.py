@@ -286,3 +286,133 @@ def test_presentation_never_reaches_past_the_citations_it_was_given():
     assert presented.citations == ()
     assert presented.answer == "A. B. C."
     assert presented.removed_marks == 3
+
+
+# --- labels used as names, not marks (v1.0.1) ---------------------------------
+#
+# Asked what it knows, a model lists the passages the way the context shows
+# them: `S1: Ausbildung`. Only `[S1]` is citation syntax; every other form is a
+# label written as a name, and the reader must never see it.
+
+
+def test_a_bracketed_mark_is_still_renumbered_as_before():
+    """Case A: the existing citation path is untouched."""
+    presented, _ = present("FastAPI und Python [S1].", "S1")
+
+    assert presented.answer == "FastAPI und Python [1]."
+    assert len(presented.citations) == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("S1: Informationen zu seiner Ausbildung.", "Informationen zu seiner Ausbildung."),
+        ("S1 : Informationen zu seiner Ausbildung.", "Informationen zu seiner Ausbildung."),
+        ("(S1) Informationen zu seiner Ausbildung.", "Informationen zu seiner Ausbildung."),
+        ("(S1): Informationen zu seiner Ausbildung.", "Informationen zu seiner Ausbildung."),
+        ("S1 - Informationen zu seiner Ausbildung.", "Informationen zu seiner Ausbildung."),
+        ("S2 \u2013 Weitere Informationen.", "Weitere Informationen."),
+        ("S10 \u2014 Weitere Informationen.", "Weitere Informationen."),
+        ("S23: Weitere Informationen.", "Weitere Informationen."),
+    ],
+)
+def test_a_label_opening_a_line_is_removed(text: str, expected: str):
+    """Cases B to E."""
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == expected
+
+
+def test_labels_on_consecutive_lines_are_all_removed():
+    """Case E."""
+    presented, _ = present(
+        "S1 - Informationen zu A.\nS2 \u2013 Weitere Informationen.\nS10 \u2014 Noch mehr.", "S1"
+    )
+
+    assert presented.answer == "Informationen zu A.\nWeitere Informationen.\nNoch mehr."
+
+
+def test_a_bullet_list_keeps_its_bullets_and_loses_its_labels():
+    """Case F."""
+    presented, _ = present("Die Wissensbasis:\n- S1: Ausbildung\n- S2: Skills\n- S3: RAG", "S1")
+
+    assert presented.answer == "Die Wissensbasis:\n- Ausbildung\n- Skills\n- RAG"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("* S1: A\n* S2: B", "* A\n* B"),
+        ("1. S1: A\n2. S2: B", "1. A\n2. B"),
+        ("1) S1 \u2013 A\n2) S2 \u2013 B", "1) A\n2) B"),
+        ("  - S1: eingerückt", "  - eingerückt"),
+    ],
+)
+def test_other_list_markers_are_kept_too(text: str, expected: str):
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == expected
+
+
+def test_labels_inside_a_paragraph_after_punctuation_are_removed():
+    presented, _ = present("Die Wissensbasis umfasst: S1: Studium. S2: Skills, S3: RAG.", "S1")
+
+    assert presented.answer == "Die Wissensbasis umfasst: Studium. Skills, RAG."
+
+
+def test_parenthesised_labels_in_running_text_are_removed():
+    presented, _ = present("FastAPI wird genutzt (S1), ebenso Vectorize (S2, S3).", "S1")
+
+    assert presented.answer == "FastAPI wird genutzt, ebenso Vectorize."
+
+
+def test_a_label_name_and_a_citation_mark_on_one_line():
+    """The name goes, the mark is renumbered — neither path disturbs the other."""
+    presented, _ = present("- S1: Ausbildung [S1]\n- S2: Skills [S2]", "S1", "S2")
+
+    assert presented.answer == "- Ausbildung [1]\n- Skills [2]"
+    assert len(presented.citations) == 2
+
+
+def test_removing_label_names_does_not_touch_the_citations():
+    """Case H: the verified list is exactly what validation produced."""
+    presented, outcome = present("S1: Ausbildung.\nS2: Skills.", "S1", "S2")
+
+    assert presented.citations == outcome.citations
+    assert [citation.title for citation in presented.citations] == ["Doc 1", "Doc 2"]
+    assert presented.removed_marks == 0, "a label name is not a failed citation mark"
+
+
+def test_plain_text_without_labels_is_unchanged():
+    """Case G."""
+    text = "Er hat Informatik studiert.\n\n- Python\n- FastAPI: ein Web-Framework\n1. Erstens"
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == text
+
+
+# --- what must not be mistaken for a label ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ein Samsung Galaxy S23: gutes Telefon.",
+        "AWS S3: Objektspeicher.",
+        "Audi S3 - sportlich.",
+        "Dateien liegen im S3-Bucket.",
+        "S3-Bucket für Artefakte.",
+        "Python 3.12, v1.0.0 und Release S1.2.",
+        "Siehe https://example.com/S1:abc und https://example.com/(S1).",
+        "x = S1 - S2",
+        'print("S1: x")',
+        "Treffen um S1:30 ist kein Label.",
+        "SS1: kein Label, S1x: auch nicht.",
+        "Die Serie S10 ist ein Produkt.",
+        "Stufe S2 bezeichnet eine Stufe.",
+    ],
+)
+def test_legitimate_text_is_not_mistaken_for_a_label(text: str):
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == text

@@ -29,6 +29,9 @@ Three rules, and all three exist to keep the numbers honest:
   an unknown ``[S9]`` into ``[3]`` would be inventing a citation at the last
   possible moment, which is precisely what the rest of this package exists to
   prevent.
+
+A label a model wrote as a *name* — ``S1: Ausbildung``, ``(S2)`` — is not a
+mark at all and is removed outright; the reader was never meant to see it.
 """
 
 from __future__ import annotations
@@ -47,6 +50,27 @@ from portfolio_rag.rag.context import ContextSource
 #: are captured so that removing a mark does not leave a double space behind —
 #: spaces and tabs only, never a newline, so no line is joined to the one above.
 _MARK: Final = re.compile(r"([ \t]*)\[(S\d+)\]")
+
+#: A label a model used as a *name* rather than a mark: ``S1: Ausbildung``,
+#: ``- S2 - Skills``, ``(S3) Details``. The prompt shows passages under
+#: ``[SOURCE S1]``, and asked what it knows, a model lists them that way.
+#: These are never citations — only ``[S1]`` is — so they are removed, not
+#: renumbered. Deliberately narrow, so ``Galaxy S23: …`` or ``S3-Bucket``
+#: survive: the label must open a line (after an optional list marker) or
+#: follow punctuation, and a bare label must be followed by ``:``, a dash
+#: with a blank after it, or an en/em dash. The kept ``lead`` preserves list
+#: markers and sentence punctuation.
+_LABEL_AS_NAME: Final = re.compile(
+    r"(?P<lead>^[ \t]*(?:(?:[-*+•]|\d+[.)])[ \t]+)?|[.,;:!?][ \t]+)"
+    r"(?:\(S\d+\)|S\d+(?=[ \t]*(?::(?!\d)|[\u2013\u2014]|-[ \t])))"
+    r"[ \t]*(?::(?!\d)|[\u2013\u2014]|-(?=[ \t]))?[ \t]*",
+    re.MULTILINE,
+)
+
+#: A parenthesised label anywhere else — ``FastAPI (S1)`` or ``(S1, S2)``.
+#: Parentheses are not the citation syntax, so there is nothing to renumber.
+#: Not after a ``/``, which is a URL path rather than prose.
+_PARENTHESISED_LABELS: Final = re.compile(r"[ \t]*(?<!/)\(S\d+(?:[ \t]*,[ \t]*S\d+)*\)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +118,8 @@ def present_answer(
         return f"{blanks}[{order.index(citation) + 1}]"
 
     presented = _MARK.sub(renumber, answer)
+    presented = _LABEL_AS_NAME.sub(r"\g<lead>", presented)
+    presented = _PARENTHESISED_LABELS.sub("", presented)
 
     # A verified citation the prose never marked still belongs in the list —
     # validation admitted it, and this step does not get to overrule that. It

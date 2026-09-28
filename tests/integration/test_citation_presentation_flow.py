@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from portfolio_rag.rag.policy import RetrievalPolicy
-from portfolio_rag.rag.service import AnswerOutcome
+from portfolio_rag.rag.service import INSUFFICIENT_KNOWLEDGE_ANSWER, AnswerOutcome
 from tests.doubles import ScriptedLLMProvider, ScriptedReply, grounded
 from tests.integration.test_rag_pipeline import build_pipeline
 from tests.support import run
@@ -138,3 +138,67 @@ def test_the_numbering_is_dense_whatever_the_labels_were(
     answer = answer_with(grounded(text, *labels))
 
     assert answer.answer == expected
+
+
+# --- labels used as names, not marks (v1.0.1) ---------------------------------
+
+
+def test_asked_about_its_knowledge_base_it_does_not_list_internal_labels():
+    """Case J — the production report: a meta question answered by listing S-labels."""
+    # The retrieval double is lexical and the fixture corpus is English, so the
+    # pipeline is asked `QUESTION` to retrieve anything; the reply below is
+    # what a model wrote for "Was hast du für eine Wissensbasis?".
+    answer = answer_with(
+        grounded(
+            "Die Wissensbasis besteht aus mehreren strukturierten Dokumenten:\n\n"
+            "- S1: Informationen zum Framework\n"
+            "- S2: Angaben zur Speicherung",
+            "S1",
+            "S2",
+        )
+    )
+
+    assert answer.outcome is AnswerOutcome.ANSWERED
+    assert answer.answer == (
+        "Die Wissensbasis besteht aus mehreren strukturierten Dokumenten:\n\n"
+        "- Informationen zum Framework\n"
+        "- Angaben zur Speicherung"
+    )
+    assert "S1" not in answer.answer
+    assert "S2" not in answer.answer
+    assert len(answer.citations) == 2, "the verified sources are still published"
+
+
+def test_asked_which_sources_it_uses_it_does_not_disclose_labels():
+    """Case K."""
+    # Reply as written for "Welche Quellen nutzt du?" — see the test above.
+    answer = answer_with(
+        grounded(
+            "Ich nutze diese Quellen:\n1. S1 \u2013 Framework [S1]\n2. S2 \u2013 Speicherung",
+            "S1",
+            "S2",
+        )
+    )
+
+    assert answer.answer == "Ich nutze diese Quellen:\n1. Framework [1]\n2. Speicherung"
+    assert "S1" not in answer.answer
+    assert "S2" not in answer.answer
+    assert len(answer.citations) == 2
+
+
+def test_label_names_do_not_change_the_structured_citations():
+    """Case H: same sources, with and without label names — same citation list."""
+    marked = answer_with(grounded("FastAPI [S1]. Markdown [S2].", "S1", "S2"))
+    named = answer_with(grounded("S1: FastAPI [S1].\nS2: Markdown [S2].", "S1", "S2"))
+
+    assert named.answer == "FastAPI [1].\nMarkdown [2]."
+    assert named.citations == marked.citations
+
+
+def test_a_refusal_is_unchanged_even_when_the_draft_named_labels():
+    """Case I: the refusal path never reaches presentation, so its wording is fixed."""
+    answer = answer_with(grounded("S1: something unprovable.", "S99"))
+
+    assert answer.outcome is AnswerOutcome.NOT_GROUNDED
+    assert answer.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+    assert answer.citations == ()
