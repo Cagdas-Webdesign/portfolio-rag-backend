@@ -361,13 +361,13 @@ def test_a_malformed_reply_is_a_controlled_failure():
 
 def test_the_context_budget_is_applied_to_what_the_model_receives():
     service, _ = build_service(
-        context_policy=ContextPolicy(max_prompt_tokens=1200, output_reserve_tokens=200)
+        context_policy=ContextPolicy(max_prompt_tokens=1600, output_reserve_tokens=200)
     )
 
     answer = run(service.answer("FastAPI Markdown storage documents"))
 
     assert answer.context is not None
-    assert answer.context.estimated_tokens <= 1200 - 200
+    assert answer.context.estimated_tokens <= 1600 - 200
 
 
 def test_a_budget_too_small_for_the_instructions_never_reaches_a_provider():

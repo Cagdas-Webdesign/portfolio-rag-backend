@@ -11,33 +11,79 @@ excellent retrieval and broken citation validation gets a good grade.
 The runner is handed its services rather than building them. That is what lets
 the same dataset run against the offline stack in CI and against real providers
 from the CLI, with nothing swapped but the wiring.
+
+**Pacing between questions is the runner's, and only the runner's.** Every
+question costs one query embedding, and a dataset run asks them back to back —
+a burst no visitor produces. ``delay_seconds`` waits that long *between* two
+questions: never before the first, never after the last, so N questions make
+at most N - 1 pauses. It lives here rather than in the retrieval service or an
+adapter because it is a property of a batch run; the chat path never reaches
+this module and cannot acquire it.
 """
 
 from __future__ import annotations
 
+import asyncio
+import math
 import time
 from dataclasses import dataclass
+from typing import Protocol
 
+from portfolio_rag.core.errors import AppError
+from portfolio_rag.core.logging import get_logger
 from portfolio_rag.evaluation.dataset import EvaluationDataset, EvaluationQuestion
+from portfolio_rag.evaluation.e2e import (
+    AbortReason,
+    E2ERecord,
+    E2EReport,
+    RunAbort,
+    errored_record,
+    score_answer,
+)
 from portfolio_rag.evaluation.metrics import (
     RetrievalReport,
     build_report,
     score_retrieval,
 )
-from portfolio_rag.rag.errors import QueryValidationError
+from portfolio_rag.evaluation.pacing import Sleeper
+from portfolio_rag.rag.errors import GenerationUnavailableError, QueryValidationError
 from portfolio_rag.rag.query import normalize_query
 from portfolio_rag.rag.retrieval import PublicRetrievalService
 from portfolio_rag.rag.service import AnswerOutcome, GroundedAnswerService
 
+_logger = get_logger(__name__)
+
+
+def validate_question_delay(delay_seconds: float) -> float:
+    """A usable pause between questions: finite and not negative."""
+    if not math.isfinite(delay_seconds) or delay_seconds < 0:
+        raise ValueError("the delay between questions must be a finite number, 0 or more")
+    return delay_seconds
+
+
+async def _pause_between(position: int, delay_seconds: float, sleeper: Sleeper | None) -> None:
+    """Wait before every question but the first, and only when asked to."""
+    if position > 0 and delay_seconds > 0:
+        await (sleeper or asyncio.sleep)(delay_seconds)
+
 
 async def run_retrieval_evaluation(
-    dataset: EvaluationDataset, retrieval: PublicRetrievalService
+    dataset: EvaluationDataset,
+    retrieval: PublicRetrievalService,
+    *,
+    delay_seconds: float = 0.0,
+    sleeper: Sleeper | None = None,
 ) -> RetrievalReport:
-    """Score every question's retrieval. No provider generates anything."""
+    """Score every question's retrieval. No provider generates anything.
+
+    *delay_seconds* pauses between questions; see the module docstring.
+    """
+    validate_question_delay(delay_seconds)
     records = []
-    for question in dataset.questions:
+    for position, question in enumerate(dataset.questions):
+        await _pause_between(position, delay_seconds, sleeper)
         outcome = await retrieval.retrieve(normalize_query(question.question))
-        records.append(score_retrieval(question, outcome.chunks))
+        records.append(score_retrieval(question, outcome.chunks, outcome=outcome))
     return build_report(records)
 
 
@@ -118,11 +164,21 @@ class GroundingReport:
 
 
 async def run_grounding_evaluation(
-    dataset: EvaluationDataset, answers: GroundedAnswerService
+    dataset: EvaluationDataset,
+    answers: GroundedAnswerService,
+    *,
+    delay_seconds: float = 0.0,
+    sleeper: Sleeper | None = None,
 ) -> GroundingReport:
-    """Run the full pipeline for every question and record what came out."""
+    """Run the full pipeline for every question and record what came out.
+
+    Each answer embeds its question again, so the same pause applies here.
+    It is not counted in a question's duration.
+    """
+    validate_question_delay(delay_seconds)
     records: list[GroundingRecord] = []
-    for question in dataset.questions:
+    for position, question in enumerate(dataset.questions):
+        await _pause_between(position, delay_seconds, sleeper)
         started = time.perf_counter()
         try:
             answer = await answers.answer(question.question)
@@ -139,3 +195,85 @@ async def run_grounding_evaluation(
             )
         )
     return GroundingReport(records=tuple(records))
+
+
+async def run_e2e_evaluation(
+    dataset: EvaluationDataset,
+    answers: GroundedAnswerService,
+    *,
+    delay_seconds: float = 0.0,
+    sleeper: Sleeper | None = None,
+    guard: QuestionGuard | None = None,
+) -> E2EReport:
+    """Ask every question once and record the whole pass.
+
+    One pipeline call per question, so one query embedding, one vector search
+    and at most one generation each. A question the pipeline raises on is
+    recorded as an error and the run goes on: a provider failing on question 30
+    must not cost the 29 answers already paid for. Its retrieval is still
+    scored when there was one.
+
+    **Only failures the pipeline itself classified are recorded and passed.**
+    Those are :class:`AppError` — every provider failure, including one the
+    port did not define, arrives as one. Anything else is a defect in this
+    code: it is not dressed up as a provider problem and the run does not
+    carry on past it. The run ends there, the report says so, and the records
+    measured before it are kept.
+
+    *guard*, when given, is asked after every question whether the run goes
+    on (`evaluation.operations`): a provider that said no more, one that keeps
+    failing, a run heading past the budget. When it says stop, no further
+    question is asked and the report is the partial one, marked aborted.
+    """
+    validate_question_delay(delay_seconds)
+    records: list[E2ERecord] = []
+    for position, question in enumerate(dataset.questions):
+        await _pause_between(position, delay_seconds, sleeper)
+        started = time.perf_counter()
+        try:
+            answer = await answers.answer(question.question)
+        except AppError as exc:
+            duration = round(time.perf_counter() - started, 4)
+            # A failed generation says why, and what had been retrieved before
+            # it failed. Any other failure carries neither.
+            generation = exc if isinstance(exc, GenerationUnavailableError) else None
+            records.append(
+                errored_record(
+                    question,
+                    exc.code.value,
+                    duration_seconds=duration,
+                    retrieval=generation.retrieval if generation else None,
+                    failure=generation.failure if generation else None,
+                    provider_calls=generation.provider_calls if generation else (),
+                )
+            )
+        except Exception as exc:  # an internal defect: stop, keep what was measured
+            _logger.exception(
+                "evaluation aborted by an internal defect",
+                extra={"question_id": question.id, "error_type": type(exc).__name__},
+            )
+            return E2EReport(
+                records=tuple(records),
+                aborted=RunAbort(question_id=question.id, error_type=type(exc).__name__),
+            )
+        else:
+            duration = round(time.perf_counter() - started, 4)
+            records.append(score_answer(question, answer, duration_seconds=duration))
+
+        is_last = position == len(dataset.questions) - 1
+        reason = guard.observe(records[-1]) if guard is not None else None
+        if reason is not None and not is_last:
+            _logger.warning(
+                "evaluation stopped by its guard",
+                extra={"question_id": question.id, "reason": reason.value},
+            )
+            return E2EReport(
+                records=tuple(records), aborted=RunAbort(question_id=question.id, reason=reason)
+            )
+    return E2EReport(records=tuple(records))
+
+
+class QuestionGuard(Protocol):
+    """Asked after each question whether a run goes on. See `evaluation.operations`."""
+
+    def observe(self, record: E2ERecord) -> AbortReason | None: ...

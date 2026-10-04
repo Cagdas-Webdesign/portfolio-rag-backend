@@ -1,0 +1,4281 @@
+{
+  "format": "retrieval-eval-v1",
+  "run": {
+    "generated_at": "2026-10-01T16:59:14+00:00",
+    "git_revision": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "git_dirty": true,
+    "dataset": {
+      "path": "evaluation/portfolio-questions.yaml",
+      "sha256": "a7acebd8c928147ab69a6e4016831d7c65843a77ac3837dcad9ed1e6b2bca811",
+      "version": 1,
+      "corpus": "../knowledge",
+      "question_count": 49
+    },
+    "suite": "full",
+    "question_count": 49,
+    "embedding": {
+      "provider": "mistral",
+      "model": "mistral-embed",
+      "dimensions": 1024,
+      "representation_version": "embedding-text-v1",
+      "identity": "mistral:mistral-embed:1024:embedding-text-v1"
+    },
+    "query_representation_version": "query-text-v1",
+    "vector_store": "vectorize",
+    "retrieval_policy": {
+      "top_k": 5,
+      "min_similarity": -1.0
+    },
+    "retrieval_delay_seconds": 3.0
+  },
+  "metrics": {
+    "answerable": 44,
+    "hit_rates": {
+      "hit@1": {
+        "correct": 33,
+        "total": 44
+      },
+      "hit@3": {
+        "correct": 38,
+        "total": 44
+      },
+      "hit@5": {
+        "correct": 39,
+        "total": 44
+      }
+    },
+    "mean_reciprocal_rank": 0.8075757575757575,
+    "threshold_rejections": {
+      "unknown": {
+        "rejected": 0,
+        "total": 5
+      }
+    },
+    "internal_leaks": 0,
+    "failures": [
+      "paraphrased-scroll-animation",
+      "multi-frontend-backend-ai",
+      "broad-system-flow",
+      "broad-ai-technologies",
+      "broad-project-scope"
+    ]
+  },
+  "questions": [
+    {
+      "id": "direct-frontend-stack",
+      "category": "direct",
+      "question": "Welche Technologien nutzt Çağdaş im Frontend?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        },
+        {
+          "document": "professional-profile",
+          "section": "Frontend, UI and Web Experience"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Technische Basis"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0002",
+          "document_id": "professional-profile",
+          "section": "Frontend, UI and Web Experience",
+          "heading_path": [
+            "Professional Profile",
+            "Frontend, UI and Web Experience"
+          ],
+          "similarity": 0.86027163,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.85757655,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0004",
+          "document_id": "working-style",
+          "section": "Design und Entwicklung zusammen denken",
+          "heading_path": [
+            "Working Style",
+            "Design und Entwicklung zusammen denken"
+          ],
+          "similarity": 0.8365857,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.83488727,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.8321,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-wordpress-experience",
+      "category": "direct",
+      "question": "Hat Çağdaş Erfahrung mit WordPress?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "wordpress-woocommerce",
+          "section": "WordPress Development"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "wordpress-woocommerce--0001",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress Development",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress Development"
+          ],
+          "similarity": 0.8239183,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "wordpress-woocommerce--0000",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress & WooCommerce",
+          "heading_path": [
+            "WordPress & WooCommerce"
+          ],
+          "similarity": 0.8225092,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "wordpress-woocommerce--0008",
+          "document_id": "wordpress-woocommerce",
+          "section": "Positionierung",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Positionierung"
+          ],
+          "similarity": 0.8172644,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "wordpress-woocommerce--0006",
+          "document_id": "wordpress-woocommerce",
+          "section": "Integrationen",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Integrationen"
+          ],
+          "similarity": 0.8107214,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "wordpress-woocommerce--0003",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress ohne unnötige Premium-Abhängigkeiten"
+          ],
+          "similarity": 0.8106945,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-languages",
+      "category": "direct",
+      "question": "Welche Sprachen spricht Çağdaş?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "professional-profile",
+          "section": "Languages"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0006",
+          "document_id": "professional-profile",
+          "section": "Languages",
+          "heading_path": [
+            "Professional Profile",
+            "Languages"
+          ],
+          "similarity": 0.88690484,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.8282292,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "social-media-content--0010",
+          "document_id": "social-media-content",
+          "section": "Marketing-Verständnis",
+          "heading_path": [
+            "Social Media & Content",
+            "Marketing-Verständnis"
+          ],
+          "similarity": 0.82314485,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.81897134,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0008",
+          "document_id": "fullstack-web-development",
+          "section": "Java",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Java"
+          ],
+          "similarity": 0.81882256,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-study-location",
+      "category": "direct",
+      "question": "Wo hat Çağdaş Wirtschaftsinformatik studiert?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "education-and-qualifications--0002",
+          "document_id": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik",
+          "heading_path": [
+            "Education and Qualifications",
+            "Wirtschaftsinformatik"
+          ],
+          "similarity": 0.88636756,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.81698895,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "education-and-qualifications--0001",
+          "document_id": "education-and-qualifications",
+          "section": "Schulbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Schulbildung"
+          ],
+          "similarity": 0.8098509,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "job-fit-and-contact--0001",
+          "document_id": "job-fit-and-contact",
+          "section": "Berufliche Ausrichtung",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Berufliche Ausrichtung"
+          ],
+          "similarity": 0.8058542,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.80415136,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-abitur",
+      "category": "direct",
+      "question": "Wo hat Çağdaş sein Abitur gemacht?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "education-and-qualifications",
+          "section": "Schulbildung"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "education-and-qualifications--0001",
+          "document_id": "education-and-qualifications",
+          "section": "Schulbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Schulbildung"
+          ],
+          "similarity": 0.84580445,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.80491465,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "education-and-qualifications--0002",
+          "document_id": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik",
+          "heading_path": [
+            "Education and Qualifications",
+            "Wirtschaftsinformatik"
+          ],
+          "similarity": 0.8017395,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "professional-profile--0006",
+          "document_id": "professional-profile",
+          "section": "Languages",
+          "heading_path": [
+            "Professional Profile",
+            "Languages"
+          ],
+          "similarity": 0.7862522,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "job-fit-and-contact--0001",
+          "document_id": "job-fit-and-contact",
+          "section": "Berufliche Ausrichtung",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Berufliche Ausrichtung"
+          ],
+          "similarity": 0.7857562,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-own-plugins",
+      "category": "direct",
+      "question": "Kann Çağdaş eigene WordPress-Plugins entwickeln?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "plugin-development",
+          "section": "Custom Plugin Development"
+        },
+        {
+          "document": "plugin-development",
+          "section": "Positionierung"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "plugin-development--0001",
+          "document_id": "plugin-development",
+          "section": "Custom Plugin Development",
+          "heading_path": [
+            "Plugin Development",
+            "Custom Plugin Development"
+          ],
+          "similarity": 0.88288254,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "plugin-development--0000",
+          "document_id": "plugin-development",
+          "section": "Plugin Development",
+          "heading_path": [
+            "Plugin Development"
+          ],
+          "similarity": 0.87668765,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "plugin-development--0009",
+          "document_id": "plugin-development",
+          "section": "Abgrenzung",
+          "heading_path": [
+            "Plugin Development",
+            "Abgrenzung"
+          ],
+          "similarity": 0.86318004,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "plugin-development--0010",
+          "document_id": "plugin-development",
+          "section": "Positionierung",
+          "heading_path": [
+            "Plugin Development",
+            "Positionierung"
+          ],
+          "similarity": 0.857847,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "plugin-development--0004",
+          "document_id": "plugin-development",
+          "section": "REST API und externe Systeme",
+          "heading_path": [
+            "Plugin Development",
+            "REST API und externe Systeme"
+          ],
+          "similarity": 0.8540077,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-databases",
+      "category": "direct",
+      "question": "Mit welchen Datenbanken arbeitet Çağdaş?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "api-backend-databases",
+          "section": "Databases"
+        },
+        {
+          "document": "professional-profile",
+          "section": "Technical Profile"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Backend Development"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0008",
+          "document_id": "api-backend-databases",
+          "section": "Databases",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Databases"
+          ],
+          "similarity": 0.88872635,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0000",
+          "document_id": "api-backend-databases",
+          "section": "API, Backend & Databases",
+          "heading_path": [
+            "API, Backend & Databases"
+          ],
+          "similarity": 0.8370644,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "api-backend-databases--0015",
+          "document_id": "api-backend-databases",
+          "section": "Positionierung",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Positionierung"
+          ],
+          "similarity": 0.82282686,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0010",
+          "document_id": "working-style",
+          "section": "Verbindung mit Marketing und Content",
+          "heading_path": [
+            "Working Style",
+            "Verbindung mit Marketing und Content"
+          ],
+          "similarity": 0.8185274,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0001",
+          "document_id": "working-style",
+          "section": "Struktur vor Umsetzung",
+          "heading_path": [
+            "Working Style",
+            "Struktur vor Umsetzung"
+          ],
+          "similarity": 0.8164147,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-vector-store",
+      "category": "direct",
+      "question": "Welchen Vector Store nutzt sein RAG-Backend?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Vector Retrieval"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "Cloudflare"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0006",
+          "document_id": "custom-rag-backend",
+          "section": "Vector Retrieval",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Vector Retrieval"
+          ],
+          "similarity": 0.81367195,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "react-portfolio--0014",
+          "document_id": "react-portfolio",
+          "section": "Custom RAG Backend",
+          "heading_path": [
+            "React Portfolio",
+            "Trennung der Projekte",
+            "Custom RAG Backend"
+          ],
+          "similarity": 0.7708959,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0025",
+          "document_id": "custom-rag-backend",
+          "section": "Technologie-Stack",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Technologie-Stack"
+          ],
+          "similarity": 0.767174,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0017",
+          "document_id": "custom-rag-backend",
+          "section": "FastAPI API",
+          "heading_path": [
+            "Custom RAG Backend",
+            "FastAPI API"
+          ],
+          "similarity": 0.75841427,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0001",
+          "document_id": "custom-rag-backend",
+          "section": "Grundprinzip",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Grundprinzip"
+          ],
+          "similarity": 0.75811374,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-social-platforms",
+      "category": "direct",
+      "question": "Mit welchen Social-Media-Plattformen beschäftigt sich Çağdaş?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "social-media-content",
+          "section": "Plattformen"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "social-media-content--0002",
+          "document_id": "social-media-content",
+          "section": "Plattformen",
+          "heading_path": [
+            "Social Media & Content",
+            "Plattformen"
+          ],
+          "similarity": 0.9010082,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "social-media-content--0012",
+          "document_id": "social-media-content",
+          "section": "Positionierung",
+          "heading_path": [
+            "Social Media & Content",
+            "Positionierung"
+          ],
+          "similarity": 0.8591027,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "social-media-content--0000",
+          "document_id": "social-media-content",
+          "section": "Social Media & Content",
+          "heading_path": [
+            "Social Media & Content"
+          ],
+          "similarity": 0.85742056,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "social-media-content--0011",
+          "document_id": "social-media-content",
+          "section": "Verbindung von Technik und Content",
+          "heading_path": [
+            "Social Media & Content",
+            "Verbindung von Technik und Content"
+          ],
+          "similarity": 0.8510869,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "social-media-content--0005",
+          "document_id": "social-media-content",
+          "section": "SocialBee",
+          "heading_path": [
+            "Social Media & Content",
+            "SocialBee"
+          ],
+          "similarity": 0.8510649,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-elevenlabs",
+      "category": "direct",
+      "question": "Wofür nutzt Çağdaş ElevenLabs?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "social-media-content",
+          "section": "ElevenLabs"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "social-media-content--0007",
+          "document_id": "social-media-content",
+          "section": "ElevenLabs",
+          "heading_path": [
+            "Social Media & Content",
+            "ElevenLabs"
+          ],
+          "similarity": 0.8379997,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.78886646,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.78078645,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "wordpress-woocommerce--0002",
+          "document_id": "wordpress-woocommerce",
+          "section": "Elementor",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Elementor"
+          ],
+          "similarity": 0.7769612,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "social-media-content--0003",
+          "document_id": "social-media-content",
+          "section": "Content Creation",
+          "heading_path": [
+            "Social Media & Content",
+            "Content Creation"
+          ],
+          "similarity": 0.7749313,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "direct-contact",
+      "category": "direct",
+      "question": "Wie kann man Çağdaş kontaktieren?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "job-fit-and-contact",
+          "section": "Kontakt"
+        },
+        {
+          "document": "job-fit-and-contact",
+          "section": "Kein Kontaktformular erforderlich"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "job-fit-and-contact--0003",
+          "document_id": "job-fit-and-contact",
+          "section": "Kontakt",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Kontakt"
+          ],
+          "similarity": 0.84977007,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0010",
+          "document_id": "working-style",
+          "section": "Verbindung mit Marketing und Content",
+          "heading_path": [
+            "Working Style",
+            "Verbindung mit Marketing und Content"
+          ],
+          "similarity": 0.81509364,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "job-fit-and-contact--0000",
+          "document_id": "job-fit-and-contact",
+          "section": "Job Fit & Contact",
+          "heading_path": [
+            "Job Fit & Contact"
+          ],
+          "similarity": 0.8119415,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "professional-profile--0005",
+          "document_id": "professional-profile",
+          "section": "Marketing and Digital Communication",
+          "heading_path": [
+            "Professional Profile",
+            "Marketing and Digital Communication"
+          ],
+          "similarity": 0.8015317,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "social-media-content--0012",
+          "document_id": "social-media-content",
+          "section": "Positionierung",
+          "heading_path": [
+            "Social Media & Content",
+            "Positionierung"
+          ],
+          "similarity": 0.7997437,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-component-ui",
+      "category": "paraphrased",
+      "question": "Kann Çağdaş moderne komponentenbasierte Weboberflächen bauen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "Component Architecture"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Technische Basis"
+        }
+      ],
+      "first_relevant_rank": 5,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0002",
+          "document_id": "professional-profile",
+          "section": "Frontend, UI and Web Experience",
+          "heading_path": [
+            "Professional Profile",
+            "Frontend, UI and Web Experience"
+          ],
+          "similarity": 0.82459664,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.80829537,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0006",
+          "document_id": "working-style",
+          "section": "Technische Erweiterbarkeit",
+          "heading_path": [
+            "Working Style",
+            "Technische Erweiterbarkeit"
+          ],
+          "similarity": 0.8068904,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.806261,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.8045095,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-premium-plugins",
+      "category": "paraphrased",
+      "question": "Wie vermeidet er bei WordPress unnötige kostenpflichtige Erweiterungen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten"
+        },
+        {
+          "document": "plugin-development",
+          "section": "Weniger Abhängigkeit von Drittanbieter-Plugins"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "wordpress-woocommerce--0004",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress ohne unnötige Premium-Abhängigkeiten"
+          ],
+          "similarity": 0.86039126,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "wordpress-woocommerce--0003",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress ohne unnötige Premium-Abhängigkeiten"
+          ],
+          "similarity": 0.85175353,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "plugin-development--0008",
+          "document_id": "plugin-development",
+          "section": "Weniger Abhängigkeit von Drittanbieter-Plugins",
+          "heading_path": [
+            "Plugin Development",
+            "Weniger Abhängigkeit von Drittanbieter-Plugins"
+          ],
+          "similarity": 0.83685243,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "wordpress-woocommerce--0007",
+          "document_id": "wordpress-woocommerce",
+          "section": "Technische Erweiterbarkeit",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Technische Erweiterbarkeit"
+          ],
+          "similarity": 0.83683753,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "wordpress-woocommerce--0008",
+          "document_id": "wordpress-woocommerce",
+          "section": "Positionierung",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Positionierung"
+          ],
+          "similarity": 0.812224,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-frontend-backend-contract",
+      "category": "paraphrased",
+      "question": "Versteht Çağdaş, wie Frontend und Backend miteinander sprechen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend und Backend verbinden"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "API Contracts"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "TypeScript und Frontend Contracts"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "fullstack-web-development--0005",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend und Backend verbinden",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend und Backend verbinden"
+          ],
+          "similarity": 0.88838226,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0015",
+          "document_id": "api-backend-databases",
+          "section": "Positionierung",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Positionierung"
+          ],
+          "similarity": 0.85452634,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "api-backend-databases--0003",
+          "document_id": "api-backend-databases",
+          "section": "API Integration",
+          "heading_path": [
+            "API, Backend & Databases",
+            "API Integration"
+          ],
+          "similarity": 0.85306937,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.8500937,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "api-backend-databases--0013",
+          "document_id": "api-backend-databases",
+          "section": "Security an Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Security an Systemgrenzen"
+          ],
+          "similarity": 0.8469062,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-edge-backend",
+      "category": "paraphrased",
+      "question": "Kann er serverseitige Logik betreiben, ohne einen klassischen Server zu mieten?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "api-backend-databases",
+          "section": "Cloudflare"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Backend Development"
+        }
+      ],
+      "first_relevant_rank": 2,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0007",
+          "document_id": "api-backend-databases",
+          "section": "Skalierbarkeit durch Struktur",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Skalierbarkeit durch Struktur"
+          ],
+          "similarity": 0.7807407,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0004",
+          "document_id": "fullstack-web-development",
+          "section": "Backend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Backend Development"
+          ],
+          "similarity": 0.7709876,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0015",
+          "document_id": "custom-rag-backend",
+          "section": "Provider Architecture",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Provider Architecture"
+          ],
+          "similarity": 0.7704383,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0022",
+          "document_id": "custom-rag-backend",
+          "section": "Docker und Production Readiness",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Docker und Production Readiness"
+          ],
+          "similarity": 0.7701012,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.76783526,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-scroll-animation",
+      "category": "paraphrased",
+      "question": "Womit setzt er zeitlich koordinierte Bewegungsabläufe beim Scrollen um?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "GSAP"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        }
+      ],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "working-style--0001",
+          "document_id": "working-style",
+          "section": "Struktur vor Umsetzung",
+          "heading_path": [
+            "Working Style",
+            "Struktur vor Umsetzung"
+          ],
+          "similarity": 0.7842565,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.7818735,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "fullstack-web-development--0003",
+          "document_id": "fullstack-web-development",
+          "section": "Motion und Web Animation",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Motion und Web Animation"
+          ],
+          "similarity": 0.7803334,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "education-and-qualifications--0005",
+          "document_id": "education-and-qualifications",
+          "section": "Verbindung der Bereiche",
+          "heading_path": [
+            "Education and Qualifications",
+            "Verbindung der Bereiche"
+          ],
+          "similarity": 0.77630913,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "social-media-content--0008",
+          "document_id": "social-media-content",
+          "section": "Content Workflow",
+          "heading_path": [
+            "Social Media & Content",
+            "Content Workflow"
+          ],
+          "similarity": 0.77622193,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-root-cause",
+      "category": "paraphrased",
+      "question": "Wie geht er vor, wenn etwas nicht funktioniert und die Ursache unklar ist?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "working-style",
+          "section": "Code Debugging"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.78365576,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0008",
+          "document_id": "working-style",
+          "section": "Code Debugging",
+          "heading_path": [
+            "Working Style",
+            "Code Debugging"
+          ],
+          "similarity": 0.781199,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0007",
+          "document_id": "working-style",
+          "section": "Qualität und Fehlerprüfung",
+          "heading_path": [
+            "Working Style",
+            "Qualität und Fehlerprüfung"
+          ],
+          "similarity": 0.7798171,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0018",
+          "document_id": "custom-rag-backend",
+          "section": "Failure Handling",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Failure Handling"
+          ],
+          "similarity": 0.77179796,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0011",
+          "document_id": "custom-rag-backend",
+          "section": "Unknown Questions",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Unknown Questions"
+          ],
+          "similarity": 0.77163136,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "paraphrased-requirements",
+      "category": "paraphrased",
+      "question": "Klärt er vorher, was ein Projekt überhaupt leisten soll?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "working-style",
+          "section": "Requirements Engineering"
+        },
+        {
+          "document": "working-style",
+          "section": "Struktur vor Umsetzung"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "working-style--0001",
+          "document_id": "working-style",
+          "section": "Struktur vor Umsetzung",
+          "heading_path": [
+            "Working Style",
+            "Struktur vor Umsetzung"
+          ],
+          "similarity": 0.80279166,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0002",
+          "document_id": "working-style",
+          "section": "Requirements Engineering",
+          "heading_path": [
+            "Working Style",
+            "Requirements Engineering"
+          ],
+          "similarity": 0.7767531,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.7719828,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0011",
+          "document_id": "working-style",
+          "section": "Grundprinzip",
+          "heading_path": [
+            "Working Style",
+            "Grundprinzip"
+          ],
+          "similarity": 0.76890844,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.76884234,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "multi-frontend-backend-ai",
+      "category": "multi_source",
+      "question": "Wie verbindet Çağdaş Frontend, Backend und KI in seinem Portfolio?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "Trennung der Projekte"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "FastAPI API"
+        },
+        {
+          "document": "professional-profile",
+          "section": "AI and RAG Development"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Portfolio Assistant Integration"
+        }
+      ],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0002",
+          "document_id": "professional-profile",
+          "section": "Frontend, UI and Web Experience",
+          "heading_path": [
+            "Professional Profile",
+            "Frontend, UI and Web Experience"
+          ],
+          "similarity": 0.8717856,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "react-portfolio--0015",
+          "document_id": "react-portfolio",
+          "section": "Positionierung",
+          "heading_path": [
+            "React Portfolio",
+            "Positionierung"
+          ],
+          "similarity": 0.86920667,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "react-portfolio--0000",
+          "document_id": "react-portfolio",
+          "section": "React Portfolio",
+          "heading_path": [
+            "React Portfolio"
+          ],
+          "similarity": 0.85853004,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.8573126,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "api-backend-databases--0015",
+          "document_id": "api-backend-databases",
+          "section": "Positionierung",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Positionierung"
+          ],
+          "similarity": 0.8532946,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "multi-fullstack-role",
+      "category": "multi_source",
+      "question": "Welche Fähigkeiten bringt Çağdaş für eine Full-Stack-Rolle mit?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "fullstack-web-development",
+          "section": "Full-Stack-Verständnis"
+        },
+        {
+          "document": "professional-profile",
+          "section": "Technical Profile"
+        },
+        {
+          "document": "job-fit-and-contact",
+          "section": "Berufliche Ausrichtung"
+        }
+      ],
+      "first_relevant_rank": 3,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "fullstack-web-development--0000",
+          "document_id": "fullstack-web-development",
+          "section": "Full-Stack Web Development",
+          "heading_path": [
+            "Full-Stack Web Development"
+          ],
+          "similarity": 0.8711067,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0008",
+          "document_id": "fullstack-web-development",
+          "section": "Java",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Java"
+          ],
+          "similarity": 0.86580694,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "fullstack-web-development--0009",
+          "document_id": "fullstack-web-development",
+          "section": "Full-Stack-Verständnis",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Full-Stack-Verständnis"
+          ],
+          "similarity": 0.8655427,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "fullstack-web-development--0004",
+          "document_id": "fullstack-web-development",
+          "section": "Backend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Backend Development"
+          ],
+          "similarity": 0.86267656,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.86237687,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "multi-marketing-automation-web",
+      "category": "multi_source",
+      "question": "Wie verbindet er Marketing, Automation und Webentwicklung?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "automation-email-marketing",
+          "section": "End-to-End-System"
+        },
+        {
+          "document": "social-media-content",
+          "section": "Website und Social Media"
+        },
+        {
+          "document": "working-style",
+          "section": "Verbindung mit Marketing und Content"
+        },
+        {
+          "document": "social-media-content",
+          "section": "Verbindung von Technik und Content"
+        }
+      ],
+      "first_relevant_rank": 2,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "automation-email-marketing--0001",
+          "document_id": "automation-email-marketing",
+          "section": "Automation",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Automation"
+          ],
+          "similarity": 0.83316123,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "automation-email-marketing--0015",
+          "document_id": "automation-email-marketing",
+          "section": "End-to-End-System",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "End-to-End-System"
+          ],
+          "similarity": 0.8269957,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0005",
+          "document_id": "automation-email-marketing",
+          "section": "APIs und Webhooks in Automationen",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "APIs und Webhooks in Automationen"
+          ],
+          "similarity": 0.82546777,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0016",
+          "document_id": "automation-email-marketing",
+          "section": "Positionierung",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Positionierung"
+          ],
+          "similarity": 0.8252962,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "education-and-qualifications--0005",
+          "document_id": "education-and-qualifications",
+          "section": "Verbindung der Bereiche",
+          "heading_path": [
+            "Education and Qualifications",
+            "Verbindung der Bereiche"
+          ],
+          "similarity": 0.82465464,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "multi-api-backend-evidence",
+      "category": "multi_source",
+      "question": "Welche technischen Nachweise im Portfolio zeigen seine API- und Backend-Kompetenz?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "job-fit-and-contact",
+          "section": "Technische Nachweise im Portfolio"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "Python & FastAPI"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Testing"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Portfolio-Relevanz"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "job-fit-and-contact--0002",
+          "document_id": "job-fit-and-contact",
+          "section": "Technische Nachweise im Portfolio",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Technische Nachweise im Portfolio"
+          ],
+          "similarity": 0.8889125,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0015",
+          "document_id": "api-backend-databases",
+          "section": "Positionierung",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Positionierung"
+          ],
+          "similarity": 0.8555171,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0024",
+          "document_id": "custom-rag-backend",
+          "section": "Portfolio-Relevanz",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Portfolio-Relevanz"
+          ],
+          "similarity": 0.8540335,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "react-portfolio--0009",
+          "document_id": "react-portfolio",
+          "section": "API Integration",
+          "heading_path": [
+            "React Portfolio",
+            "API Integration"
+          ],
+          "similarity": 0.84113735,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "react-portfolio--0014",
+          "document_id": "react-portfolio",
+          "section": "Custom RAG Backend",
+          "heading_path": [
+            "React Portfolio",
+            "Trennung der Projekte",
+            "Custom RAG Backend"
+          ],
+          "similarity": 0.83534414,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-http-200-wrong",
+      "category": "section",
+      "question": "Warum kann ein HTTP-Request technisch erfolgreich sein und fachlich trotzdem falsch?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "api-backend-databases",
+          "section": "REST APIs und HTTP-Kommunikation"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "API Contracts"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0001",
+          "document_id": "api-backend-databases",
+          "section": "REST APIs und HTTP-Kommunikation",
+          "heading_path": [
+            "API, Backend & Databases",
+            "REST APIs und HTTP-Kommunikation"
+          ],
+          "similarity": 0.8676941,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.84681046,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0018",
+          "document_id": "custom-rag-backend",
+          "section": "Failure Handling",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Failure Handling"
+          ],
+          "similarity": 0.80637777,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0014",
+          "document_id": "automation-email-marketing",
+          "section": "Fehlerbehandlung",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Fehlerbehandlung"
+          ],
+          "similarity": 0.79831064,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "job-fit-and-contact--0002",
+          "document_id": "job-fit-and-contact",
+          "section": "Technische Nachweise im Portfolio",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Technische Nachweise im Portfolio"
+          ],
+          "similarity": 0.78277475,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-threshold-not-boundary",
+      "category": "section",
+      "question": "Warum ist der Similarity Threshold nicht die eigentliche Sicherheitsgrenze?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Similarity Threshold"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Grounding"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0007",
+          "document_id": "custom-rag-backend",
+          "section": "Similarity Threshold",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Similarity Threshold"
+          ],
+          "similarity": 0.8737593,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0013",
+          "document_id": "api-backend-databases",
+          "section": "Security an Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Security an Systemgrenzen"
+          ],
+          "similarity": 0.784293,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0010",
+          "document_id": "custom-rag-backend",
+          "section": "Grounding",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Grounding"
+          ],
+          "similarity": 0.7773702,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.7675548,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0020",
+          "document_id": "custom-rag-backend",
+          "section": "Evaluation",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Evaluation"
+          ],
+          "similarity": 0.76743287,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-citation-forge",
+      "category": "section",
+      "question": "Warum kann das Modell nicht einfach eine beliebige Quelle erfinden?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Citation Security"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0013",
+          "document_id": "custom-rag-backend",
+          "section": "Citation Security",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Citation Security"
+          ],
+          "similarity": 0.8063542,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0009",
+          "document_id": "custom-rag-backend",
+          "section": "LLM Generation",
+          "heading_path": [
+            "Custom RAG Backend",
+            "LLM Generation"
+          ],
+          "similarity": 0.7856499,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0001",
+          "document_id": "custom-rag-backend",
+          "section": "Grundprinzip",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Grundprinzip"
+          ],
+          "similarity": 0.78348243,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.7826788,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0010",
+          "document_id": "custom-rag-backend",
+          "section": "Grounding",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Grounding"
+          ],
+          "similarity": 0.78258556,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-no-answer",
+      "category": "section",
+      "question": "Was passiert, wenn das System keine belegbare Antwort findet?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Unknown Questions"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Grounding"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0011",
+          "document_id": "custom-rag-backend",
+          "section": "Unknown Questions",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Unknown Questions"
+          ],
+          "similarity": 0.8137925,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0010",
+          "document_id": "custom-rag-backend",
+          "section": "Grounding",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Grounding"
+          ],
+          "similarity": 0.8069936,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.79893374,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0007",
+          "document_id": "custom-rag-backend",
+          "section": "Similarity Threshold",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Similarity Threshold"
+          ],
+          "similarity": 0.7925524,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.78845453,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-backend-as-project",
+      "category": "section",
+      "question": "Warum ist das Backend selbst ein Portfolio-Projekt?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Portfolio-Relevanz"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0024",
+          "document_id": "custom-rag-backend",
+          "section": "Portfolio-Relevanz",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Portfolio-Relevanz"
+          ],
+          "similarity": 0.8379051,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "react-portfolio--0014",
+          "document_id": "react-portfolio",
+          "section": "Custom RAG Backend",
+          "heading_path": [
+            "React Portfolio",
+            "Trennung der Projekte",
+            "Custom RAG Backend"
+          ],
+          "similarity": 0.82595384,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0025",
+          "document_id": "custom-rag-backend",
+          "section": "Technologie-Stack",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Technologie-Stack"
+          ],
+          "similarity": 0.82015765,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0017",
+          "document_id": "custom-rag-backend",
+          "section": "FastAPI API",
+          "heading_path": [
+            "Custom RAG Backend",
+            "FastAPI API"
+          ],
+          "similarity": 0.82008207,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "react-portfolio--0015",
+          "document_id": "react-portfolio",
+          "section": "Positionierung",
+          "heading_path": [
+            "React Portfolio",
+            "Positionierung"
+          ],
+          "similarity": 0.817462,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-prompt-injection",
+      "category": "section",
+      "question": "Was passiert, wenn in einem Dokument steht, dass frühere Regeln ignoriert werden sollen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Prompt Injection"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0014",
+          "document_id": "custom-rag-backend",
+          "section": "Prompt Injection",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Prompt Injection"
+          ],
+          "similarity": 0.7876375,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.76970625,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0018",
+          "document_id": "custom-rag-backend",
+          "section": "Failure Handling",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Failure Handling"
+          ],
+          "similarity": 0.7690617,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "api-backend-databases--0010",
+          "document_id": "api-backend-databases",
+          "section": "Datenflüsse",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Datenflüsse"
+          ],
+          "similarity": 0.7690268,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0003",
+          "document_id": "custom-rag-backend",
+          "section": "Knowledge Ingestion",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Knowledge Ingestion"
+          ],
+          "similarity": 0.7683165,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-degree-claim",
+      "category": "section",
+      "question": "Hat Çağdaş einen abgeschlossenen Hochschulabschluss in Wirtschaftsinformatik?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "education-and-qualifications--0002",
+          "document_id": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik",
+          "heading_path": [
+            "Education and Qualifications",
+            "Wirtschaftsinformatik"
+          ],
+          "similarity": 0.8952624,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "education-and-qualifications--0001",
+          "document_id": "education-and-qualifications",
+          "section": "Schulbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Schulbildung"
+          ],
+          "similarity": 0.85339487,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.8366872,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "education-and-qualifications--0000",
+          "document_id": "education-and-qualifications",
+          "section": "Education and Qualifications",
+          "heading_path": [
+            "Education and Qualifications"
+          ],
+          "similarity": 0.8224188,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "job-fit-and-contact--0001",
+          "document_id": "job-fit-and-contact",
+          "section": "Berufliche Ausrichtung",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Berufliche Ausrichtung"
+          ],
+          "similarity": 0.810518,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-slack-bot-company",
+      "category": "section",
+      "question": "Kann Çağdaş einen individuellen Slack Bot für interne Unternehmensprozesse entwickeln?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "automation-email-marketing",
+          "section": "Custom Slack Bots"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "automation-email-marketing--0008",
+          "document_id": "automation-email-marketing",
+          "section": "Custom Slack Bots",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Custom Slack Bots"
+          ],
+          "similarity": 0.8717865,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "automation-email-marketing--0009",
+          "document_id": "automation-email-marketing",
+          "section": "Custom Slack Bots",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Custom Slack Bots"
+          ],
+          "similarity": 0.8540579,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0004",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot zu Automation zu Slack"
+          ],
+          "similarity": 0.8302758,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0007",
+          "document_id": "automation-email-marketing",
+          "section": "Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Slack"
+          ],
+          "similarity": 0.81978923,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.8067483,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-lead-flow",
+      "category": "section",
+      "question": "Wie kann ein Lead von einer Landingpage bis zu HubSpot, Slack und E-Mail-Automation weiterverarbeitet werden?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "automation-email-marketing",
+          "section": "End-to-End-System"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "automation-email-marketing--0004",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot zu Automation zu Slack"
+          ],
+          "similarity": 0.90915936,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "automation-email-marketing--0003",
+          "document_id": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Landingpage zu HubSpot"
+          ],
+          "similarity": 0.8883133,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0007",
+          "document_id": "automation-email-marketing",
+          "section": "Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Slack"
+          ],
+          "similarity": 0.8820151,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0015",
+          "document_id": "automation-email-marketing",
+          "section": "End-to-End-System",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "End-to-End-System"
+          ],
+          "similarity": 0.8508621,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "automation-email-marketing--0002",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot"
+          ],
+          "similarity": 0.8504363,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-elementor-widgets",
+      "category": "section",
+      "question": "Kann er eigene Elementor-Widgets bauen, wenn ein Element fehlt?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "plugin-development",
+          "section": "Elementor Custom Widgets"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "plugin-development--0002",
+          "document_id": "plugin-development",
+          "section": "Elementor Custom Widgets",
+          "heading_path": [
+            "Plugin Development",
+            "Elementor Custom Widgets"
+          ],
+          "similarity": 0.8625629,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "wordpress-woocommerce--0002",
+          "document_id": "wordpress-woocommerce",
+          "section": "Elementor",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Elementor"
+          ],
+          "similarity": 0.8122079,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "wordpress-woocommerce--0007",
+          "document_id": "wordpress-woocommerce",
+          "section": "Technische Erweiterbarkeit",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Technische Erweiterbarkeit"
+          ],
+          "similarity": 0.80755657,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "plugin-development--0008",
+          "document_id": "plugin-development",
+          "section": "Weniger Abhängigkeit von Drittanbieter-Plugins",
+          "heading_path": [
+            "Plugin Development",
+            "Weniger Abhängigkeit von Drittanbieter-Plugins"
+          ],
+          "similarity": 0.7794786,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "plugin-development--0001",
+          "document_id": "plugin-development",
+          "section": "Custom Plugin Development",
+          "heading_path": [
+            "Plugin Development",
+            "Custom Plugin Development"
+          ],
+          "similarity": 0.77487004,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "section-woocommerce-shop",
+      "category": "section",
+      "question": "Kann Çağdaş einen kompletten Onlineshop umsetzen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "wordpress-woocommerce",
+          "section": "WooCommerce"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "wordpress-woocommerce--0005",
+          "document_id": "wordpress-woocommerce",
+          "section": "WooCommerce",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WooCommerce"
+          ],
+          "similarity": 0.7937029,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "wordpress-woocommerce--0008",
+          "document_id": "wordpress-woocommerce",
+          "section": "Positionierung",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Positionierung"
+          ],
+          "similarity": 0.7852902,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "wordpress-woocommerce--0003",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress ohne unnötige Premium-Abhängigkeiten"
+          ],
+          "similarity": 0.7797415,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0000",
+          "document_id": "working-style",
+          "section": "Working Style",
+          "heading_path": [
+            "Working Style"
+          ],
+          "similarity": 0.77863944,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.7764852,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-frontend-technologies",
+      "category": "ambiguous",
+      "question": "Welche Frontend-Technologien nutzt Çağdaş?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        },
+        {
+          "document": "professional-profile",
+          "section": "Frontend, UI and Web Experience"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Technische Basis"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0002",
+          "document_id": "professional-profile",
+          "section": "Frontend, UI and Web Experience",
+          "heading_path": [
+            "Professional Profile",
+            "Frontend, UI and Web Experience"
+          ],
+          "similarity": 0.8297384,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.82781464,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0004",
+          "document_id": "working-style",
+          "section": "Design und Entwicklung zusammen denken",
+          "heading_path": [
+            "Working Style",
+            "Design und Entwicklung zusammen denken"
+          ],
+          "similarity": 0.80597997,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.80133855,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.7970397,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-api-frontend",
+      "category": "ambiguous",
+      "question": "Wie verbindet er API-Integration und Frontend?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "API Integration"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "API Integration"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "API Integration"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0003",
+          "document_id": "api-backend-databases",
+          "section": "API Integration",
+          "heading_path": [
+            "API, Backend & Databases",
+            "API Integration"
+          ],
+          "similarity": 0.89221627,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0006",
+          "document_id": "fullstack-web-development",
+          "section": "API Integration",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "API Integration"
+          ],
+          "similarity": 0.8660057,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "react-portfolio--0009",
+          "document_id": "react-portfolio",
+          "section": "API Integration",
+          "heading_path": [
+            "React Portfolio",
+            "API Integration"
+          ],
+          "similarity": 0.86181235,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "api-backend-databases--0002",
+          "document_id": "api-backend-databases",
+          "section": "API Contracts",
+          "heading_path": [
+            "API, Backend & Databases",
+            "API Contracts"
+          ],
+          "similarity": 0.8494344,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0017",
+          "document_id": "custom-rag-backend",
+          "section": "FastAPI API",
+          "heading_path": [
+            "Custom RAG Backend",
+            "FastAPI API"
+          ],
+          "similarity": 0.8381582,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-react-role",
+      "category": "ambiguous",
+      "question": "Welche Rolle spielt React in seinem Portfolio?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "Technische Basis"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        },
+        {
+          "document": "professional-profile",
+          "section": "Frontend, UI and Web Experience"
+        }
+      ],
+      "first_relevant_rank": 2,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "react-portfolio--0015",
+          "document_id": "react-portfolio",
+          "section": "Positionierung",
+          "heading_path": [
+            "React Portfolio",
+            "Positionierung"
+          ],
+          "similarity": 0.85598963,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "react-portfolio--0001",
+          "document_id": "react-portfolio",
+          "section": "Technische Basis",
+          "heading_path": [
+            "React Portfolio",
+            "Technische Basis"
+          ],
+          "similarity": 0.8550698,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "react-portfolio--0008",
+          "document_id": "react-portfolio",
+          "section": "Motion als Teil der User Experience",
+          "heading_path": [
+            "React Portfolio",
+            "Motion als Teil der User Experience"
+          ],
+          "similarity": 0.8460375,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "react-portfolio--0011",
+          "document_id": "react-portfolio",
+          "section": "Portfolio Assistant Integration",
+          "heading_path": [
+            "React Portfolio",
+            "Portfolio Assistant Integration"
+          ],
+          "similarity": 0.8406793,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "react-portfolio--0012",
+          "document_id": "react-portfolio",
+          "section": "Trennung der Projekte",
+          "heading_path": [
+            "React Portfolio",
+            "Trennung der Projekte"
+          ],
+          "similarity": 0.8395422,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "unknown-phone-number",
+      "category": "unknown",
+      "question": "Wie lautet die private Telefonnummer von Çağdaş?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0006",
+          "document_id": "professional-profile",
+          "section": "Languages",
+          "heading_path": [
+            "Professional Profile",
+            "Languages"
+          ],
+          "similarity": 0.8065065,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "job-fit-and-contact--0003",
+          "document_id": "job-fit-and-contact",
+          "section": "Kontakt",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Kontakt"
+          ],
+          "similarity": 0.80568326,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0010",
+          "document_id": "working-style",
+          "section": "Verbindung mit Marketing und Content",
+          "heading_path": [
+            "Working Style",
+            "Verbindung mit Marketing und Content"
+          ],
+          "similarity": 0.79269207,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "professional-profile--0005",
+          "document_id": "professional-profile",
+          "section": "Marketing and Digital Communication",
+          "heading_path": [
+            "Professional Profile",
+            "Marketing and Digital Communication"
+          ],
+          "similarity": 0.7895866,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.78739995,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "unknown-major-clients",
+      "category": "unknown",
+      "question": "Für welche großen Kunden hat Çağdaş gearbeitet?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.819958,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "job-fit-and-contact--0001",
+          "document_id": "job-fit-and-contact",
+          "section": "Berufliche Ausrichtung",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Berufliche Ausrichtung"
+          ],
+          "similarity": 0.8161339,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0010",
+          "document_id": "working-style",
+          "section": "Verbindung mit Marketing und Content",
+          "heading_path": [
+            "Working Style",
+            "Verbindung mit Marketing und Content"
+          ],
+          "similarity": 0.81467414,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "job-fit-and-contact--0003",
+          "document_id": "job-fit-and-contact",
+          "section": "Kontakt",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Kontakt"
+          ],
+          "similarity": 0.810061,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0000",
+          "document_id": "working-style",
+          "section": "Working Style",
+          "heading_path": [
+            "Working Style"
+          ],
+          "similarity": 0.80780524,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "unknown-salary",
+      "category": "unknown",
+      "question": "Wie hoch ist sein aktuelles Gehalt?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "education-and-qualifications--0002",
+          "document_id": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik",
+          "heading_path": [
+            "Education and Qualifications",
+            "Wirtschaftsinformatik"
+          ],
+          "similarity": 0.76376224,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.7555338,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "professional-profile--0007",
+          "document_id": "professional-profile",
+          "section": "Professional Focus",
+          "heading_path": [
+            "Professional Profile",
+            "Professional Focus"
+          ],
+          "similarity": 0.74988097,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "education-and-qualifications--0005",
+          "document_id": "education-and-qualifications",
+          "section": "Verbindung der Bereiche",
+          "heading_path": [
+            "Education and Qualifications",
+            "Verbindung der Bereiche"
+          ],
+          "similarity": 0.7493035,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0008",
+          "document_id": "fullstack-web-development",
+          "section": "Java",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Java"
+          ],
+          "similarity": 0.7448744,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "unknown-kubernetes-production",
+      "category": "unknown",
+      "question": "Welche Kubernetes-Produktionssysteme hat er betrieben?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0022",
+          "document_id": "custom-rag-backend",
+          "section": "Docker und Production Readiness",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Docker und Production Readiness"
+          ],
+          "similarity": 0.8222385,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0007",
+          "document_id": "api-backend-databases",
+          "section": "Skalierbarkeit durch Struktur",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Skalierbarkeit durch Struktur"
+          ],
+          "similarity": 0.7869223,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.78482103,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "api-backend-databases--0012",
+          "document_id": "api-backend-databases",
+          "section": "Docker",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Docker"
+          ],
+          "similarity": 0.782127,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.7745204,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "unknown-medical-training",
+      "category": "unknown",
+      "question": "Welche medizinische Ausbildung hat er?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "education-and-qualifications--0001",
+          "document_id": "education-and-qualifications",
+          "section": "Schulbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Schulbildung"
+          ],
+          "similarity": 0.80565596,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.802126,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "education-and-qualifications--0002",
+          "document_id": "education-and-qualifications",
+          "section": "Wirtschaftsinformatik",
+          "heading_path": [
+            "Education and Qualifications",
+            "Wirtschaftsinformatik"
+          ],
+          "similarity": 0.80060494,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "education-and-qualifications--0005",
+          "document_id": "education-and-qualifications",
+          "section": "Verbindung der Bereiche",
+          "heading_path": [
+            "Education and Qualifications",
+            "Verbindung der Bereiche"
+          ],
+          "similarity": 0.79747206,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "professional-profile--0007",
+          "document_id": "professional-profile",
+          "section": "Professional Focus",
+          "heading_path": [
+            "Professional Profile",
+            "Professional Focus"
+          ],
+          "similarity": 0.75606126,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-assistant-stack",
+      "category": "direct",
+      "question": "Welche Technologien stecken hinter dem AI Portfolio Assistant?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Backend Development"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Trennung der Projekte"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0025",
+          "document_id": "custom-rag-backend",
+          "section": "Technologie-Stack",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Technologie-Stack"
+          ],
+          "similarity": 0.85373825,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0024",
+          "document_id": "custom-rag-backend",
+          "section": "Portfolio-Relevanz",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Portfolio-Relevanz"
+          ],
+          "similarity": 0.8521847,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "react-portfolio--0011",
+          "document_id": "react-portfolio",
+          "section": "Portfolio Assistant Integration",
+          "heading_path": [
+            "React Portfolio",
+            "Portfolio Assistant Integration"
+          ],
+          "similarity": 0.84604937,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0000",
+          "document_id": "custom-rag-backend",
+          "section": "Custom RAG Backend",
+          "heading_path": [
+            "Custom RAG Backend"
+          ],
+          "similarity": 0.82681906,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0026",
+          "document_id": "custom-rag-backend",
+          "section": "End-to-End-Systemablauf",
+          "heading_path": [
+            "Custom RAG Backend",
+            "End-to-End-Systemablauf"
+          ],
+          "similarity": 0.8241088,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-chatbot-technology",
+      "category": "direct",
+      "question": "Welche Technologie steckt hinter diesem Chatbot?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Backend Development"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Trennung der Projekte"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0025",
+          "document_id": "custom-rag-backend",
+          "section": "Technologie-Stack",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Technologie-Stack"
+          ],
+          "similarity": 0.81707424,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0000",
+          "document_id": "custom-rag-backend",
+          "section": "Custom RAG Backend",
+          "heading_path": [
+            "Custom RAG Backend"
+          ],
+          "similarity": 0.79606676,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0009",
+          "document_id": "automation-email-marketing",
+          "section": "Custom Slack Bots",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Custom Slack Bots"
+          ],
+          "similarity": 0.7949601,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.7898985,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0009",
+          "document_id": "custom-rag-backend",
+          "section": "LLM Generation",
+          "heading_path": [
+            "Custom RAG Backend",
+            "LLM Generation"
+          ],
+          "similarity": 0.78642446,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-system-flow",
+      "category": "section",
+      "question": "Wie funktioniert das System insgesamt, von der Frage bis zur Antwort?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Grundprinzip"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        }
+      ],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "working-style--0001",
+          "document_id": "working-style",
+          "section": "Struktur vor Umsetzung",
+          "heading_path": [
+            "Working Style",
+            "Struktur vor Umsetzung"
+          ],
+          "similarity": 0.8069063,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0026",
+          "document_id": "custom-rag-backend",
+          "section": "End-to-End-Systemablauf",
+          "heading_path": [
+            "Custom RAG Backend",
+            "End-to-End-Systemablauf"
+          ],
+          "similarity": 0.8060504,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.8051198,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0011",
+          "document_id": "custom-rag-backend",
+          "section": "Unknown Questions",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Unknown Questions"
+          ],
+          "similarity": 0.7912233,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "api-backend-databases--0014",
+          "document_id": "api-backend-databases",
+          "section": "Fehlerdiagnose über Systemgrenzen",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Fehlerdiagnose über Systemgrenzen"
+          ],
+          "similarity": 0.7894491,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-deployment",
+      "category": "multi_source",
+      "question": "Wie wird das Backend ausgeliefert und produktiv betrieben?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Docker und Production Readiness"
+        },
+        {
+          "document": "api-backend-databases",
+          "section": "Docker"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0022",
+          "document_id": "custom-rag-backend",
+          "section": "Docker und Production Readiness",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Docker und Production Readiness"
+          ],
+          "similarity": 0.85140264,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0015",
+          "document_id": "api-backend-databases",
+          "section": "Positionierung",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Positionierung"
+          ],
+          "similarity": 0.83235484,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "api-backend-databases--0010",
+          "document_id": "api-backend-databases",
+          "section": "Datenflüsse",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Datenflüsse"
+          ],
+          "similarity": 0.82872206,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0015",
+          "document_id": "custom-rag-backend",
+          "section": "Provider Architecture",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Provider Architecture"
+          ],
+          "similarity": 0.82516974,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "custom-rag-backend--0017",
+          "document_id": "custom-rag-backend",
+          "section": "FastAPI API",
+          "heading_path": [
+            "Custom RAG Backend",
+            "FastAPI API"
+          ],
+          "similarity": 0.81837547,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-mistral-vectorize-roles",
+      "category": "multi_source",
+      "question": "Welche Rolle spielen Mistral und Cloudflare Vectorize in diesem System?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Vector Retrieval"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "LLM Generation"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Embeddings"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Backend Development"
+        }
+      ],
+      "first_relevant_rank": 2,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "api-backend-databases--0011",
+          "document_id": "api-backend-databases",
+          "section": "Cloudflare",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Cloudflare"
+          ],
+          "similarity": 0.837381,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "custom-rag-backend--0006",
+          "document_id": "custom-rag-backend",
+          "section": "Vector Retrieval",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Vector Retrieval"
+          ],
+          "similarity": 0.8105706,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0009",
+          "document_id": "custom-rag-backend",
+          "section": "LLM Generation",
+          "heading_path": [
+            "Custom RAG Backend",
+            "LLM Generation"
+          ],
+          "similarity": 0.7850023,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0005",
+          "document_id": "custom-rag-backend",
+          "section": "Embeddings",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Embeddings"
+          ],
+          "similarity": 0.7829992,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0004",
+          "document_id": "fullstack-web-development",
+          "section": "Backend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Backend Development"
+          ],
+          "similarity": 0.78117055,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "broad-ai-technologies",
+      "category": "multi_source",
+      "question": "Welche KI-Technologien setzt Çağdaş konkret ein?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "professional-profile",
+          "section": "AI and RAG Development"
+        },
+        {
+          "document": "social-media-content",
+          "section": "ElevenLabs"
+        }
+      ],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "social-media-content--0003",
+          "document_id": "social-media-content",
+          "section": "Content Creation",
+          "heading_path": [
+            "Social Media & Content",
+            "Content Creation"
+          ],
+          "similarity": 0.8449995,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.83832914,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.8311208,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0004",
+          "document_id": "working-style",
+          "section": "Design und Entwicklung zusammen denken",
+          "heading_path": [
+            "Working Style",
+            "Design und Entwicklung zusammen denken"
+          ],
+          "similarity": 0.8293117,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "education-and-qualifications--0003",
+          "document_id": "education-and-qualifications",
+          "section": "Weiterbildung",
+          "heading_path": [
+            "Education and Qualifications",
+            "Weiterbildung"
+          ],
+          "similarity": 0.8273493,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-frontend-backend-in-portfolio",
+      "category": "multi_source",
+      "question": "Wie arbeiten Frontend und Backend in diesem Portfolio zusammen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "Portfolio Assistant Integration"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "FastAPI API"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "API Integration"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "react-portfolio--0009",
+          "document_id": "react-portfolio",
+          "section": "API Integration",
+          "heading_path": [
+            "React Portfolio",
+            "API Integration"
+          ],
+          "similarity": 0.8595769,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "fullstack-web-development--0005",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend und Backend verbinden",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend und Backend verbinden"
+          ],
+          "similarity": 0.85765594,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "react-portfolio--0003",
+          "document_id": "react-portfolio",
+          "section": "TypeScript und Frontend Contracts",
+          "heading_path": [
+            "React Portfolio",
+            "TypeScript und Frontend Contracts"
+          ],
+          "similarity": 0.84878016,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "custom-rag-backend--0017",
+          "document_id": "custom-rag-backend",
+          "section": "FastAPI API",
+          "heading_path": [
+            "Custom RAG Backend",
+            "FastAPI API"
+          ],
+          "similarity": 0.84707546,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "react-portfolio--0010",
+          "document_id": "react-portfolio",
+          "section": "Keine Secrets im Frontend",
+          "heading_path": [
+            "React Portfolio",
+            "Keine Secrets im Frontend"
+          ],
+          "similarity": 0.8447141,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "broad-project-scope",
+      "category": "multi_source",
+      "question": "Was wurde bei diesem Projekt technisch insgesamt umgesetzt?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "custom-rag-backend",
+          "section": "Portfolio-Relevanz"
+        },
+        {
+          "document": "custom-rag-backend",
+          "section": "Technologie-Stack"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Trennung der Projekte"
+        }
+      ],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "working-style--0001",
+          "document_id": "working-style",
+          "section": "Struktur vor Umsetzung",
+          "heading_path": [
+            "Working Style",
+            "Struktur vor Umsetzung"
+          ],
+          "similarity": 0.82481164,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0006",
+          "document_id": "working-style",
+          "section": "Technische Erweiterbarkeit",
+          "heading_path": [
+            "Working Style",
+            "Technische Erweiterbarkeit"
+          ],
+          "similarity": 0.8245173,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0004",
+          "document_id": "working-style",
+          "section": "Design und Entwicklung zusammen denken",
+          "heading_path": [
+            "Working Style",
+            "Design und Entwicklung zusammen denken"
+          ],
+          "similarity": 0.82071894,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0009",
+          "document_id": "working-style",
+          "section": "Technologie nach Anwendungsfall",
+          "heading_path": [
+            "Working Style",
+            "Technologie nach Anwendungsfall"
+          ],
+          "similarity": 0.8166052,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "professional-profile--0001",
+          "document_id": "professional-profile",
+          "section": "Technical Profile",
+          "heading_path": [
+            "Professional Profile",
+            "Technical Profile"
+          ],
+          "similarity": 0.8152005,
+          "relevant": false
+        }
+      ]
+    }
+  ]
+}

@@ -24,8 +24,8 @@ technologies:
   - Figma
 source: "Çağdaş Uçar"
 source_type: authored
-version: 1
-updated_at: 2026-08-18
+version: 2
+updated_at: 2026-10-01
 visibility: public
 trust_level: authoritative
 ---
@@ -71,6 +71,8 @@ Er beschäftigt sich deshalb neben klassischer Webentwicklung auch mit API-Integ
 Ein aktueller technischer Schwerpunkt liegt auf KI-gestützten Webanwendungen und Retrieval-Augmented Generation.
 
 Für seinen Portfolio-Assistenten entwickelt Çağdaş ein eigenes RAG-Backend mit Python und FastAPI. Das System trennt unter anderem Wissensverarbeitung, Chunking, Embeddings, Vector Retrieval, Kontextbildung, Antwortgenerierung und Quellenvalidierung.
+
+Als KI-Technologien setzt er in diesem Backend konkret Mistral mit dem Modell `mistral-embed` für die Embeddings, Cloudflare Vectorize als Vector Store für das semantische Retrieval und Cloudflare Workers AI für die Textgenerierung ein. Im Content-Bereich arbeitet beziehungsweise beschäftigt er sich außerdem mit ElevenLabs für KI-gestützte Audio-Produktion.
 
 Die detaillierte Architektur dieses Systems ist als eigenes Portfolio-Projekt dokumentiert.
 

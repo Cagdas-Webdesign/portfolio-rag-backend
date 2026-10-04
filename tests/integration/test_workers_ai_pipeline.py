@@ -53,7 +53,16 @@ def workers_ai(result: dict[str, Any]) -> WorkersAIChatProvider:
 def grounded_result(**message_extra: Any) -> dict[str, Any]:
     message: dict[str, Any] = {
         "role": "assistant",
-        "content": json.dumps({"answer": "The service uses FastAPI.", "sources": ["S1"]}),
+        # The transport serves this one reply to both calls of a request: the
+        # generation reads its three fields, the grounding check reads `verdict`.
+        "content": json.dumps(
+            {
+                "answer": "The service uses FastAPI.",
+                "sources": ["S1"],
+                "support": "stated",
+                "verdict": "supported",
+            }
+        ),
     }
     message.update(message_extra)
     return {
@@ -109,6 +118,8 @@ def test_reasoning_carried_as_a_content_part_never_becomes_the_answer():
                                         {
                                             "answer": "The service uses FastAPI.",
                                             "sources": ["S1"],
+                                            "support": "stated",
+                                            "verdict": "supported",
                                         }
                                     ),
                                 },

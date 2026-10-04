@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from portfolio_rag import __version__
 from portfolio_rag.api.schemas.chat import MAX_MESSAGE_LENGTH, ChatRequest, ChatResponse
 from portfolio_rag.api.schemas.errors import ErrorBody, ErrorResponse
 from portfolio_rag.api.schemas.health import HealthResponse
@@ -65,6 +66,6 @@ def test_the_error_envelope_serializes_to_the_documented_shape():
 
 
 def test_health_reports_only_status_service_and_version():
-    payload = HealthResponse(status="ok", service="portfolio-rag-assistant", version="0.1.0")
+    payload = HealthResponse(status="ok", service="portfolio-rag-assistant", version=__version__)
 
     assert set(payload.model_dump()) == {"status", "service", "version"}

@@ -230,8 +230,12 @@ insufficient-knowledge sentence and `citations: []` — that empty list is how a
 case. The sentence is written by the backend rather than the model, and comes back in the language
 of the question (German or English; English for anything else).
 
-**No conversation state.** `conversation_id` is echoed back and nothing more. Each question is
-answered on its own, from the corpus.
+**No conversation state.** `conversation_id` is echoed back and nothing more. A client may send the
+turns immediately before the question in an optional `conversation` list (at most 6 turns, roles
+`user` and `assistant`, each at most 2000 characters; the oldest whole turns beyond a 3000-character
+budget are left out). They are used only so the model can read a follow-up such as "and how is it
+deployed?": retrieval still searches for the question as asked, the grounding check never sees them,
+and they are never a source or a citation. Nothing is stored between requests.
 
 **What a response never contains:** similarity scores, source labels, the assembled context, the
 prompt, the embedding space, vector ids, fingerprints, timings, or provider and model names. All of
@@ -477,7 +481,8 @@ declined, with the reasoning in [docs/ROADMAP.md](docs/ROADMAP.md):
 * **No microservices.** One deployable with real module boundaries. Extraction stays possible;
   nothing is distributed without a reason.
 * **No conversation memory, chat history or database.** The assistant answers one question at a time
-  from a fixed corpus. Multi-turn state is a product decision nobody has made.
+  from a fixed corpus. A client may send the last few turns to make a follow-up readable; the
+  service stores nothing, and those turns are never evidence.
 * **No agents or tool use.** There is one job: answer from the corpus, or say it cannot.
 * **No re-ranking, hybrid/BM25 search or query rewriting.** Real techniques, but evaluation found
   the limiting factor to be threshold calibration under a specific embedding model rather than

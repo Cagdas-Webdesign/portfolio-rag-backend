@@ -266,3 +266,82 @@ def test_workers_ai_answers_the_grounded_prompt_in_the_shape_it_was_asked_for():
     assert draft.answer, "a reasoning model must still return a final answer"
     assert draft.source_labels == ("S1",), "the model must cite the label it was given"
     assert (WORKERS_AI_TOKEN or "") not in response.text
+
+
+#: One neutral pair per side of the line the grounding check has to hold. The
+#: passage speaks about one project, today; the first answer stretches it to a
+#: person's whole history, the second repeats what it says.
+_LIMITS_PASSAGE = (
+    "The example project deliberately does not use a message queue, as long as the use "
+    "case does not need one."
+)
+_HISTORY_PASSAGE = "Alex has never worked as a database administrator."
+
+
+def _grounding_check(question: str, answer: str, passage: str) -> GenerationRequest:
+    from portfolio_rag.domain.retrieval import RetrievedChunk
+    from portfolio_rag.rag.context import build_context
+    from portfolio_rag.rag.verification import build_grounding_check_request
+    from tests.doubles import make_chunk
+
+    chunk = make_chunk("live-check--0000", passage, document_id="live-check")
+    context = build_context([RetrievedChunk(chunk=chunk, similarity=0.9)], available_tokens=2000)
+    return build_grounding_check_request(
+        question=question, answer=answer, cited=context.sources, max_output_tokens=800
+    )
+
+
+@requires_live
+@pytest.mark.skipif(
+    not (CLOUDFLARE_ACCOUNT and WORKERS_AI_TOKEN),
+    reason="no Cloudflare Workers AI credentials configured",
+)
+@pytest.mark.parametrize(
+    ("question", "answer", "passage", "expected"),
+    [
+        pytest.param(
+            "Which message queues has Alex operated in production?",
+            "Alex has never operated a message queue in production [S1].",
+            _LIMITS_PASSAGE,
+            "not_supported",
+            id="a project's limits stretched to a person's history",
+        ),
+        pytest.param(
+            "Does the example project use a message queue?",
+            "No, the project deliberately does not use a message queue [S1].",
+            _LIMITS_PASSAGE,
+            "supported",
+            id="what the passage says about the project",
+        ),
+        pytest.param(
+            "Has Alex worked as a database administrator?",
+            "No, Alex has never worked as a database administrator [S1].",
+            _HISTORY_PASSAGE,
+            "supported",
+            id="a negative the passage states about the person",
+        ),
+    ],
+)
+def test_workers_ai_holds_the_line_the_grounding_check_exists_for(
+    question: str, answer: str, passage: str, expected: str
+):
+    """The one thing no offline test can show: how the real model judges a pair.
+
+    Three short requests against passages invented for this test. One run of a
+    non-deterministic model — a failure here is a finding to read, not a flake
+    to retry until it passes.
+    """
+    from portfolio_rag.infrastructure.llm import WorkersAIChatProvider
+    from portfolio_rag.rag.verification import parse_grounding_check
+
+    provider = WorkersAIChatProvider(
+        account_id=CLOUDFLARE_ACCOUNT or "",
+        api_token=WORKERS_AI_TOKEN or "",
+        model=WORKERS_AI_MODEL,
+    )
+    try:
+        response = run(provider.generate(_grounding_check(question, answer, passage)))
+    finally:
+        run(provider.aclose())
+
+    assert parse_grounding_check(response.text).value == expected

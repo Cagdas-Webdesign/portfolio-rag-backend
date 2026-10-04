@@ -167,6 +167,8 @@ and no number in this system is presented as a confidence.
 * An answer the corpus supports but the model cites badly is refused rather than published. Failing
   closed is the right default; Phase 6 has the data to say how often it happens.
 * No conversation state: a follow-up question is answered on its own. That is a product decision,
-  recorded in the roadmap.
+  recorded in the roadmap. *Later amended:* a client may send the last few turns with a question
+  (`rag/conversation.py`). They reach only the generation prompt, as a section named as not being a
+  source; retrieval, the grounding check and citation validation are unchanged, and nothing is stored.
 * The offline development stack answers with a stub that generates no language. It is unmistakably
   labelled, and the composition root refuses to build it in production.

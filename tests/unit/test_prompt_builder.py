@@ -115,7 +115,133 @@ def test_answering_in_the_question_language_survived_the_rewrite():
 
 
 def test_the_answer_contract_is_stated_in_the_instructions():
-    assert '{"answer": "<your answer>", "sources": ["S1", "S2"]}' in SYSTEM_INSTRUCTIONS
+    assert (
+        '{"answer": "<your answer>", "sources": ["S1", "S2"], "support": "stated"}'
+        in SYSTEM_INSTRUCTIONS
+    )
+
+
+def test_the_contract_shows_what_a_refusal_looks_like():
+    """v4: a refusal is a stated decision, not an inference from an empty list."""
+    assert '{"answer": "", "sources": [], "support": "none"}' in SYSTEM_INSTRUCTIONS
+
+
+def test_the_verdict_is_required_and_has_exactly_three_values():
+    """v6: the reply says how its answer relates to the passages, every time."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert '"support" is required' in lowered
+    for value in ('- "stated":', '- "inferred":', '- "none":'):
+        assert value in lowered
+    assert "answerable" not in lowered.replace("unknown fact answerable", "")
+
+
+def test_the_verdict_is_given_after_the_answer_it_judges():
+    """The model writes the answer first and classifies what it wrote."""
+    shape = '{"answer": "<your answer>", "sources": ["S1", "S2"], "support": "stated"}'
+
+    assert shape.index('"answer"') < shape.index('"support"')
+    assert shape in SYSTEM_INSTRUCTIONS
+    assert "how the answer you wrote relates to the passages" in " ".join(
+        SYSTEM_INSTRUCTIONS.split()
+    )
+
+
+def test_each_verdict_is_defined_by_the_answer_and_the_passages():
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "the passages directly say what your answer says" in lowered
+    assert "does not go beyond the subject, the scope or the time the passages speak of" in lowered
+    assert "a conclusion, a wider scope, a generalization" in lowered
+    assert "the correction of an assumption knowledge does not confirm" in lowered
+    assert "do not contain enough information for the answer" in lowered
+
+
+def test_a_stated_negative_is_named_as_stated():
+    """What keeps an explicit "no" answerable under a verdict that refuses inference."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert (
+        "a negative statement that a passage makes about the same subject and the same "
+        "matter is stated" in lowered
+    )
+
+
+def test_the_verdict_does_not_depend_on_the_kind_of_document():
+    """A project passage that says what the answer says supports it like any other."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "not the kind of document a passage comes from" in lowered
+    assert "any passage can support an answer that it directly states" in lowered
+
+
+def test_what_makes_a_question_answerable_is_spelled_out():
+    """v4: the specific fact, not its neighbours; no assumed premise; silence is not denial."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "states the specific fact the question asks for" in lowered
+    assert "related or neighbouring passages do not make an unknown fact answerable" in lowered
+    assert "take something for granted that knowledge does not confirm" in lowered
+    assert "missing information is not evidence of the opposite" in lowered
+    assert "only when a passage says so explicitly" in lowered
+    assert 'set "support" to "none"' in lowered
+
+
+def test_a_passage_is_evidence_only_inside_its_own_scope():
+    """v5: a statement about one subject is not a statement about another."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "only about the subject, scope and time it speaks of" in lowered
+    assert "must never be widened" in lowered
+    # Project scope is not person scope.
+    assert (
+        "what one project or system does not contain says nothing about what a person "
+        "has done elsewhere" in lowered
+    )
+    # Current use is not history.
+    assert "what holds now says nothing about what held before" in lowered
+
+
+def test_a_premise_the_knowledge_does_not_confirm_is_neither_affirmed_nor_denied():
+    """v5: the measured reply did not adopt the premise — it contradicted it."""
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "do not treat that as true, and do not deny it either" in lowered
+
+
+def test_a_negation_needs_a_passage_about_the_subject_being_asked_about():
+    """v5: "explicitly" alone was met by a passage about something else.
+
+    The same sentence is what keeps a stated negative answerable: it forbids
+    nothing a passage says about the subject of the question.
+    """
+    lowered = " ".join(SYSTEM_INSTRUCTIONS.lower().split())
+
+    assert "missing information is not evidence of the opposite" in lowered
+    assert (
+        "only when a passage says so explicitly about the very subject the question "
+        "asks about" in lowered
+    )
+
+
+def test_the_rule_names_no_topic_and_no_question():
+    """A rule about facts in general: nothing from the questions that prompted it."""
+    lowered = SYSTEM_INSTRUCTIONS.lower()
+
+    for word in (
+        "kubernetes",
+        "redis",
+        "docker",
+        "medical",
+        "medizin",
+        "degree",
+        "abschluss",
+        "salary",
+        "gehalt",
+        "phone",
+        "telefon",
+    ):
+        assert word not in lowered
 
 
 def test_structured_output_is_requested_from_the_provider():
@@ -130,7 +256,7 @@ def test_generation_settings_are_explicit_rather_than_provider_defaults():
 
 
 def test_the_prompt_strategy_is_versioned():
-    assert GROUNDED_PROMPT_VERSION == "grounded-answer-v3"
+    assert GROUNDED_PROMPT_VERSION.endswith("-v6")
 
 
 def test_the_same_inputs_produce_the_same_prompt():

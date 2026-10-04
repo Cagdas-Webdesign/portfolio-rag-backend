@@ -10,6 +10,7 @@ No real credential appears anywhere in this file.
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -20,7 +21,7 @@ from portfolio_rag.infrastructure.llm.workers_ai import (
     DEFAULT_MODEL,
     WorkersAIChatProvider,
 )
-from portfolio_rag.ports.errors import LLMProviderError
+from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
 from portfolio_rag.ports.llm import (
     GenerationRequest,
     LLMProvider,
@@ -638,3 +639,112 @@ def test_a_nonsensical_retry_budget_is_refused():
 
 def test_the_default_model_is_the_one_this_project_migrated_to():
     assert DEFAULT_MODEL == "@cf/openai/gpt-oss-120b"
+
+
+# --- what "unreachable" may and may not mean ------------------------------------
+#
+# A request Workers AI never received must not be reported as Workers AI being
+# unreachable. Seen in practice: a token with a trailing newline made the HTTP
+# client refuse the Authorization header locally, every attempt failed before a
+# byte was sent, and the run reported `retryable_provider_error / unreachable`
+# after three attempts — while the endpoint answered a hand-made request fine.
+
+
+@pytest.mark.parametrize(
+    ("status", "kind", "retryable", "requests"),
+    [
+        (400, ProviderFailureKind.HTTP_STATUS, False, 1),
+        (401, ProviderFailureKind.HTTP_STATUS, False, 1),
+        (403, ProviderFailureKind.HTTP_STATUS, False, 1),
+        (429, ProviderFailureKind.RATE_LIMITED, True, 3),
+    ],
+)
+def test_an_answering_endpoint_is_never_unreachable(
+    status: int, kind: ProviderFailureKind, retryable: bool, requests: int
+):
+    provider, recorder = make_provider(status_response(status))
+
+    with pytest.raises(LLMProviderError) as caught:
+        run(provider.generate(REQUEST))
+
+    error = caught.value
+    assert error.kind is kind and error.kind is not ProviderFailureKind.UNREACHABLE
+    assert (error.status_code, error.retryable) == (status, retryable)
+    assert len(recorder.requests) == error.attempts == requests
+
+
+def test_a_200_completion_is_a_success():
+    provider, _ = make_provider(json_response(completion("Hello.")))
+
+    assert run(provider.generate(REQUEST)).text == "Hello."
+
+
+def test_a_real_connection_failure_is_unreachable_and_names_its_class():
+    provider, recorder = make_provider(raising(httpx.ConnectError("no route")))
+
+    with pytest.raises(
+        LLMProviderError, match=r"could not be reached .*\(ConnectError\)"
+    ) as caught:
+        run(provider.generate(REQUEST))
+
+    assert caught.value.kind is ProviderFailureKind.UNREACHABLE
+    assert caught.value.retryable and len(recorder.requests) == 3
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        httpx.LocalProtocolError("Illegal header value b'Bearer secret-token\\n'"),
+        httpx.UnsupportedProtocol("Request URL has an unsupported protocol 'ftp://'."),
+    ],
+)
+def test_a_request_that_cannot_be_sent_is_not_unreachable_and_not_retried(
+    exception: Exception,
+):
+    provider, recorder = make_provider(raising(exception))
+
+    with pytest.raises(LLMProviderError, match="invalid locally") as caught:
+        run(provider.generate(REQUEST))
+
+    error = caught.value
+    assert error.kind is ProviderFailureKind.UNSPECIFIED
+    assert not error.retryable
+    assert error.attempts == 1 and len(recorder.requests) == 1
+    assert type(exception).__name__ in error.message
+    assert "secret-token" not in error.message  # the header value is never quoted
+
+
+def test_a_token_with_a_trailing_newline_fails_locally_without_a_network_call():
+    """The real client and transport, no mock: h11 refuses the header itself.
+
+    A loopback socket that accepts connections and never answers: the client
+    connects, then refuses to send. Nothing leaves the machine.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    provider = WorkersAIChatProvider(
+        account_id="test-account-id",
+        api_token="test-token-not-a-real-credential\n",  # noqa: S106 - a fixture value
+        base_url=f"http://127.0.0.1:{port}/client/v4",
+        max_attempts=3,
+        timeout_seconds=2.0,
+    )
+
+    async def generate() -> None:
+        try:
+            await provider.generate(REQUEST)
+        finally:
+            await provider.aclose()
+
+    try:
+        with pytest.raises(LLMProviderError) as caught:
+            run(generate())
+    finally:
+        listener.close()
+
+    assert caught.value.kind is ProviderFailureKind.UNSPECIFIED
+    assert caught.value.attempts == 1
+    assert "LocalProtocolError" in caught.value.message
+    assert "test-token" not in caught.value.message

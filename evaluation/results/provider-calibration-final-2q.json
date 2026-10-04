@@ -1,0 +1,654 @@
+{
+  "format": "e2e-eval-v3",
+  "run": {
+    "run_id": "d26942d19c024e2fa18431886d3199a9",
+    "generated_at": "2026-10-04T10:38:19+00:00",
+    "project_version": "1.1.0",
+    "git_revision": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "git_dirty": true,
+    "git_dirty_excludes": [
+      "evaluation/results"
+    ],
+    "git_tag": "v1.0.1",
+    "release_source_identity": "073a9a4071819ef966553442d14c2475b06b2918cd226ed4e31b73ccb39bb108",
+    "dataset": {
+      "path": "evaluation/portfolio-questions.yaml",
+      "sha256": "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280",
+      "version": 1,
+      "corpus": "../knowledge",
+      "question_count": 49
+    },
+    "suite": "full",
+    "suite_version": 1,
+    "suite_sha256": "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280",
+    "suite_path": "evaluation/portfolio-questions.yaml",
+    "question_count": 2,
+    "embedding": {
+      "provider": "mistral",
+      "model": "mistral-embed",
+      "dimensions": 1024,
+      "representation_version": "embedding-text-v1",
+      "identity": "mistral:mistral-embed:1024:embedding-text-v1"
+    },
+    "query_representation_version": "query-text-v1",
+    "vector_store": "memory",
+    "retrieval_policy": {
+      "top_k": 5,
+      "min_similarity": 0.25,
+      "visibility": "public"
+    },
+    "retrieval_delay_seconds": 0.0,
+    "corpus": {
+      "path": "../knowledge",
+      "documents": 12,
+      "chunks": 151,
+      "sha256": "5a180eb597190008689558b360c3de291090c2a50fb6703be75c148a106a3ec8"
+    },
+    "generation": {
+      "provider": "cloudflare_workers_ai",
+      "model": "@cf/openai/gpt-oss-120b",
+      "prompt_version": "grounded-answer-v6",
+      "grounding_check_version": "grounding-check-v1",
+      "response_format": "json_object",
+      "grounding_check_response_format": "json_object",
+      "max_prompt_tokens": 6000,
+      "output_reserve_tokens": 800,
+      "max_output_tokens": 800,
+      "generation_attempt_limit": 2,
+      "transport_attempts": null,
+      "delay_seconds": 0.0
+    },
+    "tier": "smoke",
+    "rerun_of": null,
+    "notes": [],
+    "selected_question_ids": [
+      "direct-wordpress-experience",
+      "paraphrased-component-ui"
+    ],
+    "complete": true,
+    "aborted": null
+  },
+  "operations": {
+    "tier": "smoke",
+    "questions": 2,
+    "provider": "cloudflare_workers_ai",
+    "model": "@cf/openai/gpt-oss-120b",
+    "cost_profile": "https://developers.cloudflare.com/workers-ai/platform/pricing/ (2026-10-03)",
+    "forecast": {
+      "questions": 2,
+      "generation_calls": 2.4,
+      "grounding_calls": 2.0,
+      "regeneration_calls": 0.4,
+      "input_tokens": null,
+      "output_tokens": null,
+      "neurons": 968.0,
+      "per_question_neurons": 484.0,
+      "confidence": "low",
+      "method": "structural upper bound: too little comparable measured usage; every call at the context budget and output limit",
+      "usage_coverage": 0.7,
+      "generation_neurons": 528.0,
+      "grounding_neurons": 440.0,
+      "profile_sources": 4,
+      "profile_age_days": 0,
+      "compatibility": []
+    },
+    "max_port_calls": 6,
+    "daily_budget": 10000.0,
+    "minimum_reserve": 4000.0,
+    "target_share": 0.1,
+    "forecast_share": 0.097,
+    "cost_band": "target",
+    "known_daily_before": 1086.5,
+    "estimated_reserve_after": 7945.5,
+    "actual_remaining": null,
+    "zone": "green",
+    "confirmation_required": false,
+    "blockers": [],
+    "warnings": [
+      "forecast confidence is low, so the forecast is the structural upper bound: calls with measured usage generation 4/5, grounding_check 4/5 needed; usage coverage 73% (8/11 calls) of 80% needed"
+    ],
+    "status": "complete",
+    "abort_reason": null,
+    "observed": {
+      "calls": 4,
+      "input_tokens": 4425,
+      "output_tokens": 737,
+      "usage_coverage": 1.0,
+      "estimated_neurons": 191.0,
+      "unreported_calls": 0
+    },
+    "known_daily_after": 1277.5,
+    "nominal_reserve_after": 8722.5,
+    "guard": {
+      "status": "target",
+      "projected_final_neurons": 191.0,
+      "projected_final_share": 0.019,
+      "projected_band": "target"
+    },
+    "smoke": {
+      "passed": true,
+      "reasons": []
+    }
+  },
+  "passed": true,
+  "gates": {
+    "no_pipeline_errors": true,
+    "citations_verified": true,
+    "unanswerable_refused": true,
+    "nothing_internal_published": true
+  },
+  "failure_classes": {
+    "retrieval_miss": "quality",
+    "not_answered": "quality",
+    "answered_unknown": "safety",
+    "citation_on_refusal": "safety",
+    "pipeline_error": "availability",
+    "empty_answer": "availability",
+    "answered_without_citation": "safety",
+    "unverified_citation": "safety",
+    "invented_source_label": "safety",
+    "dangling_citation_mark": "safety",
+    "internal_label_leak": "safety",
+    "internal_passage_retrieved": "safety"
+  },
+  "metrics": {
+    "retrieval": {
+      "answerable": 2,
+      "hit_rates": {
+        "hit@1": {
+          "correct": 1,
+          "total": 2
+        },
+        "hit@3": {
+          "correct": 1,
+          "total": 2
+        },
+        "hit@5": {
+          "correct": 2,
+          "total": 2
+        }
+      },
+      "mean_reciprocal_rank": 0.6,
+      "threshold_rejections": {},
+      "internal_leaks": 0,
+      "failures": [],
+      "observed": {
+        "correct": 2,
+        "total": 2
+      },
+      "not_observed": []
+    },
+    "availability": {
+      "completed": {
+        "correct": 2,
+        "total": 2
+      },
+      "errors_by_category": {}
+    },
+    "answers": {
+      "outcomes": {
+        "answered": 2,
+        "no_knowledge": 0,
+        "not_grounded": 0,
+        "error": 0
+      },
+      "answerable_answered": {
+        "correct": 2,
+        "total": 2
+      },
+      "answered_citing_expected_source": {
+        "correct": 2,
+        "total": 2
+      },
+      "answered_without_expected_source": []
+    },
+    "citations": {
+      "published": 4,
+      "validity": {
+        "correct": 4,
+        "total": 4
+      },
+      "invented_source_labels": 0,
+      "answerable_without_citation": []
+    },
+    "refusals": {
+      "controlled_refusals": {
+        "correct": 0,
+        "total": 0
+      },
+      "not_refused": []
+    },
+    "robustness": {
+      "pipeline_errors": 0,
+      "empty_answers": 0,
+      "internal_label_leaks": 0,
+      "internal_passages_retrieved": 0,
+      "unresolved_matches": 0,
+      "withheld_matches": 0
+    },
+    "latency": {
+      "median_seconds": 4.135,
+      "max_seconds": 4.8
+    },
+    "provider_calls": {
+      "total": {
+        "calls": 4,
+        "regenerations": 0,
+        "results": {
+          "parsed": 4,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 4,
+        "input_tokens": 4425,
+        "output_tokens": 737,
+        "elapsed_seconds": {
+          "median": 1.846,
+          "max": 2.421
+        },
+        "finish_reasons": {
+          "stop": 4
+        }
+      },
+      "generation": {
+        "calls": 2,
+        "regenerations": 0,
+        "results": {
+          "parsed": 2,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 2,
+        "input_tokens": 2838,
+        "output_tokens": 305,
+        "elapsed_seconds": {
+          "median": 1.846,
+          "max": 1.946
+        },
+        "finish_reasons": {
+          "stop": 2
+        }
+      },
+      "grounding_check": {
+        "calls": 2,
+        "regenerations": 0,
+        "results": {
+          "parsed": 2,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 2,
+        "input_tokens": 1587,
+        "output_tokens": 432,
+        "elapsed_seconds": {
+          "median": 1.87,
+          "max": 2.421
+        },
+        "finish_reasons": {
+          "stop": 2
+        }
+      }
+    }
+  },
+  "failures": {},
+  "questions": [
+    {
+      "id": "direct-wordpress-experience",
+      "category": "direct",
+      "question": "Hat Çağdaş Erfahrung mit WordPress?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "wordpress-woocommerce",
+          "section": "WordPress Development"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "wordpress-woocommerce--0001",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress Development",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress Development"
+          ],
+          "similarity": 0.8239131694637011,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "wordpress-woocommerce--0000",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress & WooCommerce",
+          "heading_path": [
+            "WordPress & WooCommerce"
+          ],
+          "similarity": 0.8225342443287084,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "wordpress-woocommerce--0008",
+          "document_id": "wordpress-woocommerce",
+          "section": "Positionierung",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Positionierung"
+          ],
+          "similarity": 0.8172901167180773,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "wordpress-woocommerce--0006",
+          "document_id": "wordpress-woocommerce",
+          "section": "Integrationen",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "Integrationen"
+          ],
+          "similarity": 0.8107170033238317,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "wordpress-woocommerce--0003",
+          "document_id": "wordpress-woocommerce",
+          "section": "WordPress ohne unnötige Premium-Abhängigkeiten",
+          "heading_path": [
+            "WordPress & WooCommerce",
+            "WordPress ohne unnötige Premium-Abhängigkeiten"
+          ],
+          "similarity": 0.8106694351043401,
+          "relevant": false
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "answered",
+      "error_code": null,
+      "error": null,
+      "answer": "Ja, Çağdaş hat Erfahrung mit WordPress.",
+      "controlled_refusal": false,
+      "support": "stated",
+      "grounding_check": "supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S1",
+          "S2"
+        ],
+        "published": [
+          {
+            "document_id": "wordpress-woocommerce",
+            "section": "WordPress Development"
+          },
+          {
+            "document_id": "wordpress-woocommerce",
+            "section": "WordPress & WooCommerce"
+          }
+        ],
+        "verified": 2,
+        "cites_expected_source": true,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 1.7472,
+      "generation_attempts": 1,
+      "provider_calls": [
+        {
+          "call_type": "generation",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 1.747,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1384,
+          "output_tokens": 141,
+          "reply_characters": 99,
+          "reply_visible_characters": 88
+        },
+        {
+          "call_type": "grounding_check",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 2.4207,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 694,
+          "output_tokens": 229,
+          "reply_characters": 24,
+          "reply_visible_characters": 23
+        }
+      ],
+      "grounding_check_seconds": 2.4209,
+      "duration_seconds": 4.8,
+      "failures": []
+    },
+    {
+      "id": "paraphrased-component-ui",
+      "category": "paraphrased",
+      "question": "Kann Çağdaş moderne komponentenbasierte Weboberflächen bauen?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "react-portfolio",
+          "section": "Component Architecture"
+        },
+        {
+          "document": "fullstack-web-development",
+          "section": "Frontend Development"
+        },
+        {
+          "document": "react-portfolio",
+          "section": "Technische Basis"
+        }
+      ],
+      "first_relevant_rank": 5,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "professional-profile--0002",
+          "document_id": "professional-profile",
+          "section": "Frontend, UI and Web Experience",
+          "heading_path": [
+            "Professional Profile",
+            "Frontend, UI and Web Experience"
+          ],
+          "similarity": 0.8246107973185027,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0003",
+          "document_id": "working-style",
+          "section": "Design und User Experience",
+          "heading_path": [
+            "Working Style",
+            "Design und User Experience"
+          ],
+          "similarity": 0.8082506641461673,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "working-style--0006",
+          "document_id": "working-style",
+          "section": "Technische Erweiterbarkeit",
+          "heading_path": [
+            "Working Style",
+            "Technische Erweiterbarkeit"
+          ],
+          "similarity": 0.8068703179017859,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.8062628757520381,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "fullstack-web-development--0001",
+          "document_id": "fullstack-web-development",
+          "section": "Frontend Development",
+          "heading_path": [
+            "Full-Stack Web Development",
+            "Frontend Development"
+          ],
+          "similarity": 0.8045154473731421,
+          "relevant": true
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "answered",
+      "error_code": null,
+      "error": null,
+      "answer": "Ja, Çağdaş kann moderne komponentenbasierte Weboberflächen bauen.",
+      "controlled_refusal": false,
+      "support": "stated",
+      "grounding_check": "supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S1",
+          "S5"
+        ],
+        "published": [
+          {
+            "document_id": "professional-profile",
+            "section": "Frontend, UI and Web Experience"
+          },
+          {
+            "document_id": "fullstack-web-development",
+            "section": "Frontend Development"
+          }
+        ],
+        "verified": 2,
+        "cites_expected_source": true,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 1.946,
+      "generation_attempts": 1,
+      "provider_calls": [
+        {
+          "call_type": "generation",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 1.9458,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1454,
+          "output_tokens": 164,
+          "reply_characters": 133,
+          "reply_visible_characters": 113
+        },
+        {
+          "call_type": "grounding_check",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 1.3202,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 893,
+          "output_tokens": 203,
+          "reply_characters": 24,
+          "reply_visible_characters": 23
+        }
+      ],
+      "grounding_check_seconds": 1.3204,
+      "duration_seconds": 3.4701,
+      "failures": []
+    }
+  ],
+  "release_acceptance": {
+    "protocol": "release-acceptance-v1",
+    "verdict": "FAIL",
+    "conditions": {
+      "acceptance_tier": false,
+      "whole_suite": false,
+      "run_complete": true,
+      "run_not_aborted": true,
+      "every_question_recorded": true,
+      "provenance_complete": false,
+      "clean_tree": false,
+      "gates_pass": true,
+      "no_internal_leaks": true
+    },
+    "reasons": [
+      "not an acceptance-tier run",
+      "the run was narrowed to selected questions",
+      "provenance is incomplete",
+      "the working tree was not clean (or its state is unknown)",
+      "missing provenance: git_tag v1.0.1 (does not match project_version 1.1.0)"
+    ],
+    "gates": {
+      "no_pipeline_errors": "PASS",
+      "citations_verified": "PASS",
+      "unanswerable_refused": "PASS",
+      "nothing_internal_published": "PASS",
+      "internal_leaks": 0
+    },
+    "commit": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "release_source_identity": "073a9a4071819ef966553442d14c2475b06b2918cd226ed4e31b73ccb39bb108",
+    "project_version": "1.1.0",
+    "git_dirty": true,
+    "suite": "full",
+    "suite_version": 1,
+    "question_count": 2,
+    "rerun_of": null,
+    "scope": {
+      "tested": "source_commit",
+      "deployed_image_tested": false,
+      "statement": "The run executed the recorded commit's source in a local process against the configured providers and vector store. It did not exercise a container image or a deployment. An image is covered by this result only if it was built from the recorded commit."
+    },
+    "safety_invariants": [
+      "citation_validation",
+      "controlled_refusal",
+      "conversation_is_not_evidence",
+      "fail_closed_on_technical_failure",
+      "grounding_validation",
+      "public_only_retrieval",
+      "recovery_passes_safety_again",
+      "strict_generation_parser",
+      "telemetry_stays_internal"
+    ]
+  }
+}

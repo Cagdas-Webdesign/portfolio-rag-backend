@@ -268,7 +268,7 @@ Named here so that "we should also build…" has an answer that is already writt
 
 | Not building | Why |
 | --- | --- |
-| Conversation memory, chat history, a conversation database | The assistant answers one question at a time from a fixed corpus. Multi-turn state is a product decision nobody has made, and a database is a lot of machinery to add on a guess. |
+| Conversation memory, chat history, a conversation database | The assistant answers one question at a time from a fixed corpus. A client may send the last few turns with a question so a follow-up can be read (`rag/conversation.py`); they are never evidence and nothing is stored. Server-side multi-turn state is a product decision nobody has made, and a database is a lot of machinery to add on a guess. |
 | User accounts, authentication | Nothing here is per-user. There is nothing to protect that a public corpus does not already publish. |
 | An agent framework, tool calling, MCP runtime, web search | The authority in this system is the retrieved corpus. Letting a model reach past it would change what the product *is*. |
 | Re-ranking, hybrid/BM25 search, query rewriting, HyDE | Real techniques. Phase 6 measured retrieval and found the limiting factor to be threshold calibration under a specific embedding model, not ranking — so none of them is justified yet. |

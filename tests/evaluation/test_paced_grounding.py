@@ -238,11 +238,13 @@ def test_a_question_retried_twice_is_still_answered_and_still_cited(dataset, ret
 
 
 def test_questions_answered_without_a_model_never_wait(dataset, split_retrieval):
-    """Pacing is spent on generations, not on questions.
+    """Pacing is spent on provider calls, not on questions.
 
     A question the corpus cannot answer short-circuits before the provider, so
     it consumes no slot — and a run whose waits matched the question count
-    would be spending minutes on questions that cost nothing.
+    would be spending minutes on questions that cost nothing. An answer that
+    reaches the grounding check costs a second call, and that one is paced
+    like the first; a refusal never gets that far.
     """
     timeline = _Timeline()
     llm = _deciding(dataset)
@@ -252,6 +254,9 @@ def test_questions_answered_without_a_model_never_wait(dataset, split_retrieval)
     generated = sum(
         1 for record in report.records if record.outcome is not AnswerOutcome.NO_KNOWLEDGE
     )
+    checked = sum(1 for record in report.records if record.outcome is AnswerOutcome.ANSWERED)
+    calls = generated + checked
     assert 0 < generated < len(report.records), "the dataset must exercise both paths"
-    assert len(timeline.slept) == generated - 1, "one wait between generations, none around them"
-    assert timeline.slept == [INTERVAL_SECONDS] * (generated - 1)
+    assert 0 < checked < generated, "refusals must not have been checked"
+    assert len(timeline.slept) == calls - 1, "one wait between provider calls, none around them"
+    assert timeline.slept == [INTERVAL_SECONDS] * (calls - 1)

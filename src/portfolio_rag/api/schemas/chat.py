@@ -16,6 +16,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from portfolio_rag.domain.retrieval import SourceCitation
+from portfolio_rag.rag.conversation import (
+    MAX_CONVERSATION_TURNS,
+    MAX_TURN_LENGTH,
+    ConversationRole,
+)
 
 #: Upper bound on a single user message over HTTP.
 #:
@@ -38,8 +43,23 @@ MAX_MESSAGE_LENGTH = 2000
 CONVERSATION_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
 
 
+class ChatTurn(BaseModel):
+    """One earlier turn of the conversation, as the client saw it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: ConversationRole = Field(
+        description="Who said it: `user` or `assistant`. No other role is accepted."
+    )
+    content: str = Field(
+        min_length=1,
+        max_length=MAX_TURN_LENGTH,
+        description="What was said. Never logged.",
+    )
+
+
 class ChatRequest(BaseModel):
-    """A single user turn."""
+    """A user question, optionally with the turns immediately before it."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -60,6 +80,18 @@ class ChatRequest(BaseModel):
             "Client-chosen identifier, echoed back unchanged so a client can "
             "correlate turns. This service keeps no conversation state: every "
             "request is answered on its own, from the knowledge base alone."
+        ),
+    )
+    conversation: list[ChatTurn] = Field(
+        default_factory=list,
+        max_length=MAX_CONVERSATION_TURNS,
+        description=(
+            "Optional. The turns immediately before `message`, oldest first, so "
+            'that a follow-up such as "and how is it deployed?" can be read. '
+            "Used only to understand what the question refers to: it is never a "
+            "source, never cited, and not used to search the knowledge base. "
+            "When the turns exceed the conversation budget, the oldest whole "
+            "turns are left out. Omitting it answers the question on its own."
         ),
     )
 

@@ -55,6 +55,43 @@ def scripted_client(
 # --- what a visitor sees -----------------------------------------------------
 
 
+def test_a_single_turn_answer_carries_exactly_the_public_fields(rag_settings: Settings):
+    """The JSON a browser receives, key for key — nothing the service knows besides.
+
+    The answer went through generation and the grounding check, so the service
+    held provider-call records, token counts and failure facts for it. None of
+    them is a public field, at the top level or inside a citation.
+    """
+    llm = ScriptedLLMProvider(grounded("It uses FastAPI [S1].", "S1"))
+    with app_client(rag_settings, _llm=llm) as client:
+        response = client.post(CHAT_URL, json={"message": "Which web framework is used?"})
+
+    assert response.status_code == 200
+    assert (llm.call_count, llm.check_count) == (1, 1), "the provider path really ran"
+    body = response.json()
+    assert set(body) == {"answer", "citations", "conversation_id"}
+    assert body["citations"], "a grounded answer, not a refusal"
+    for citation in body["citations"]:
+        assert set(citation) == {"document_id", "title", "source", "section"}
+    serialized = response.text
+    for internal in (
+        "provider_calls",
+        "elapsed_seconds",
+        "input_tokens",
+        "output_tokens",
+        "finish_reason",
+        "failure_category",
+        "failure_detail",
+        "reply_characters",
+        "generation_attempts",
+        "grounding_check",
+        "support",
+        "retrieval",
+        "similarity",
+    ):
+        assert internal not in serialized
+
+
 def test_the_response_carries_no_internal_source_label(rag_settings: Settings):
     """Internal labels are how the backend proves a citation, not how it shows one."""
     with scripted_client(

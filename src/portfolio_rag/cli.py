@@ -14,6 +14,10 @@ No pipeline logic lives here.
     portfolio-rag query answer "<question>" [--show-retrieval] [--show-context]
     portfolio-rag eval run [--dataset PATH] [--retrieval-only]
     portfolio-rag eval run [--generation-delay-seconds F]
+    portfolio-rag eval run [--suite full|smoke] [--output PATH]
+    portfolio-rag eval run [--retrieval-delay-seconds F]
+    portfolio-rag eval run --e2e --output PATH [--summary PATH] [--note TEXT]
+    portfolio-rag eval run [--question-id ID]
 
 Built on ``argparse`` from the standard library. A CLI framework would be a
 runtime dependency bought for a handful of subcommands.
@@ -35,10 +39,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, TextIO
+from typing import Any, Final, NamedTuple, TextIO
 
 from pydantic import ValidationError
 
@@ -51,22 +60,86 @@ from portfolio_rag.composition import (
     build_indexing_components,
     build_query_components,
 )
-from portfolio_rag.core.config import Settings, get_settings
+from portfolio_rag.core.config import (
+    EmbeddingProviderName,
+    LLMProviderName,
+    Settings,
+    get_settings,
+)
 from portfolio_rag.core.errors import AppError
+from portfolio_rag.core.request_context import new_request_id, reset_request_id, set_request_id
 from portfolio_rag.domain.embedding import EmbeddingSpec
 from portfolio_rag.domain.knowledge import KnowledgeChunk, KnowledgeDocument
 from portfolio_rag.domain.retrieval import RetrievedChunk
 from portfolio_rag.evaluation import (
+    E2EReport,
+    E2ERunMetadata,
     EvaluationDataset,
     EvaluationDatasetError,
+    EvaluationQuestion,
+    EvaluationSuite,
     GenerationPacing,
     GroundingReport,
     PacedLLMProvider,
     RetrievalReport,
+    RunMetadata,
+    corpus_identity,
+    dataset_fingerprint,
+    export_e2e,
+    export_retrieval,
     load_dataset,
+    render_summary,
     resolve_corpus,
+    run_e2e_evaluation,
     run_grounding_evaluation,
     run_retrieval_evaluation,
+    select_suite,
+    suite_identity,
+    validate_question_delay,
+    write_export,
+)
+from portfolio_rag.evaluation.acceptance import (
+    SOURCE_IDENTITY_EXCLUDES,
+    SOURCE_IDENTITY_INCLUDES,
+    source_identity,
+    validate_artifact,
+    with_release_acceptance,
+)
+from portfolio_rag.evaluation.budget import (
+    DAILY_BUDGET_NEURONS,
+    MINIMUM_RESERVE_NEURONS,
+    BudgetPolicy,
+    BudgetZone,
+    Ledger,
+    LedgerEntry,
+    cost_profile,
+    spent,
+)
+from portfolio_rag.evaluation.e2e import AbortReason
+from portfolio_rag.evaluation.experiment import (
+    DEFAULT_VARIANTS,
+    ExperimentError,
+    ExperimentLimits,
+    ExperimentMetadata,
+    ExperimentRun,
+    PreparedQuestion,
+    StopReason,
+    export_experiment,
+    plan_calls,
+    prepare_questions,
+)
+from portfolio_rag.evaluation.export import GIT_DIRTY_EXCLUDES
+from portfolio_rag.evaluation.operations import (
+    TIER_SUITES,
+    Preflight,
+    ProfileRequirements,
+    RunGuard,
+    SmokeVerdict,
+    Tier,
+    describe_preflight,
+    load_history,
+    preflight,
+    smoke_verdict,
 )
 from portfolio_rag.ingestion import KnowledgeBaseReport, collect_knowledge_base
 from portfolio_rag.ingestion.chunking import (
@@ -82,17 +155,26 @@ from portfolio_rag.ingestion.embedding import (
     compute_embedding_fingerprint,
 )
 from portfolio_rag.ports.errors import PortError
+from portfolio_rag.ports.llm import ResponseFormat
 from portfolio_rag.rag.context import GroundedContext
 from portfolio_rag.rag.errors import QueryValidationError
-from portfolio_rag.rag.policy import RetrievalPolicy
+from portfolio_rag.rag.policy import DEFAULT_CONTEXT_POLICY, RetrievalPolicy
+from portfolio_rag.rag.prompt import GROUNDED_PROMPT_VERSION, GROUNDED_RESPONSE_FORMAT
 from portfolio_rag.rag.query import normalize_query
 from portfolio_rag.rag.retrieval import RetrievalOutcome
-from portfolio_rag.rag.service import GroundedAnswer, GroundedAnswerService
+from portfolio_rag.rag.service import AnswerOutcome, GroundedAnswer, GroundedAnswerService
+from portfolio_rag.rag.verification import GROUNDING_CHECK_VERSION
 
 #: Exit codes. 2 is left to argparse for usage errors.
 EXIT_OK: Final = 0
 EXIT_INVALID: Final = 1
 EXIT_INTERNAL_ERROR: Final = 3
+#: An acceptance-tier run that finished — or stopped — without a passing
+#: release-acceptance verdict, for any reason the verdict names: a gate, a
+#: dirty tree, an aborted or incomplete run, missing provenance. Apart from
+#: EXIT_INVALID so release automation can tell "not a release acceptance" from
+#: "the command was used wrongly".
+EXIT_ACCEPTANCE_FAILED: Final = 4
 
 DEFAULT_KNOWLEDGE_ROOT: Final = Path("knowledge")
 DEFAULT_EVALUATION_DATASET: Final = Path("evaluation/questions.yaml")
@@ -241,7 +323,230 @@ def _add_eval_group(groups: argparse._SubParsersAction[argparse.ArgumentParser])
             "called. Default: 0, which paces nothing."
         ),
     )
+    run.add_argument(
+        "--retrieval-delay-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "Seconds to wait between two questions, so a run does not send its "
+            "query embeddings back to back. Never before the first question or "
+            "after the last. Default: 0, which waits nothing."
+        ),
+    )
+    run.add_argument(
+        "--suite",
+        choices=[suite.value for suite in EvaluationSuite],
+        default=EvaluationSuite.FULL.value,
+        help=(
+            "Which questions to run: every one (full, the default) or the fixed "
+            "subset named in <dataset>.smoke.yaml beside the dataset (smoke)."
+        ),
+    )
+    run.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Also write the retrieval results as JSON: run metadata and, per "
+            "question, every retrieved passage with its similarity. Combine with "
+            "--min-similarity -1 to keep every match the store returned."
+        ),
+    )
+    run.add_argument(
+        "--question-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help=(
+            "Run only the question with this id, out of the suite. May be given more "
+            "than once. For re-asking the questions a run failed on without paying "
+            "for the rest; a result from a selection is a check, not a measurement."
+        ),
+    )
+    run.add_argument(
+        "--e2e",
+        action="store_true",
+        help=(
+            "Ask every question once through the whole pipeline and score retrieval "
+            "from the retrieval each answer used, instead of a retrieval pass followed "
+            "by an answering pass. --output then receives the end-to-end results."
+        ),
+    )
+    run.add_argument(
+        "--summary",
+        type=Path,
+        help="With --e2e: also write the results as a Markdown summary.",
+    )
+    run.add_argument(
+        "--tier",
+        choices=[tier.value for tier in Tier],
+        help=(
+            "Required with --e2e against a real provider: smoke (a handful of questions, a "
+            "provider health check) or acceptance (the release-acceptance suite). There is no "
+            "default: "
+            "a run that spends the provider allocation is always asked for by name."
+        ),
+    )
+    run.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="With --e2e: print the forecast and budget decision, and call nothing.",
+    )
+    run.add_argument(
+        "--allow-yellow",
+        action="store_true",
+        help=(
+            "With --e2e: start a run whose forecast is above the target share of the daily "
+            "budget but keeps the minimum reserve. A run that would not keep it never starts."
+        ),
+    )
+    run.add_argument(
+        "--daily-budget",
+        type=float,
+        default=DAILY_BUDGET_NEURONS,
+        help=f"Nominal daily neuron allocation (default: {DAILY_BUDGET_NEURONS:,.0f}).",
+    )
+    run.add_argument(
+        "--minimum-reserve",
+        type=float,
+        default=MINIMUM_RESERVE_NEURONS,
+        help=(
+            "Neurons that must remain for production after the run "
+            f"(default: {MINIMUM_RESERVE_NEURONS:,.0f})."
+        ),
+    )
+    run.add_argument(
+        "--ledger",
+        type=Path,
+        default=DEFAULT_LEDGER,
+        help=f"Local record of provider runs and their estimated cost (default: {DEFAULT_LEDGER}).",
+    )
+    run.add_argument(
+        "--history",
+        type=Path,
+        default=DEFAULT_HISTORY,
+        help=(
+            "Directory of earlier end-to-end exports the forecast learns from "
+            f"(default: {DEFAULT_HISTORY})."
+        ),
+    )
+    run.add_argument(
+        "--note",
+        action="append",
+        default=[],
+        help=(
+            "With --e2e: a known condition a reader needs in order to interpret the "
+            "run, recorded in the export and the summary. May be given more than once."
+        ),
+    )
+    run.add_argument(
+        "--rerun-of",
+        metavar="RUN_ID",
+        help=(
+            "With --e2e --tier acceptance: this run repeats that one, under the "
+            "provider-outlier rule — once per commit, only after a run that failed on "
+            "provider availability alone, and with a --note naming the outlier. See "
+            "docs/RELEASE_ACCEPTANCE.md."
+        ),
+    )
     _add_retrieval_options(run)
+
+    validate_acceptance = commands.add_parser(
+        "validate-acceptance",
+        help=(
+            "Check an end-to-end export as a release-acceptance artifact: recompute its "
+            "gates and verdict from its own records, and look for anything that must not "
+            "be published. Reads one file; calls nothing."
+        ),
+    )
+    validate_acceptance.add_argument("artifact", type=Path, help="The end-to-end JSON export.")
+    validate_acceptance.add_argument(
+        "--development",
+        action="store_true",
+        help=(
+            "Accept an artifact that is consistent but not a passing release acceptance "
+            "(a dirty tree, a smoke run, a failed gate) — for reading development runs. "
+            "Without it, only a PASS that may be published is accepted."
+        ),
+    )
+
+    experiment = commands.add_parser(
+        "experiment",
+        help=(
+            "Compare provider request configurations on fixed contexts (Paket 3). "
+            "Calls the configured real generation provider."
+        ),
+    )
+    experiment.add_argument(
+        "--dataset",
+        type=Path,
+        default=DEFAULT_EVALUATION_DATASET,
+        help=f"Evaluation dataset the questions come from (default: {DEFAULT_EVALUATION_DATASET}).",
+    )
+    experiment.add_argument(
+        "--question-id",
+        action="append",
+        required=True,
+        metavar="ID",
+        help="A question to ask. May be given more than once; each is retrieved once.",
+    )
+    experiment.add_argument(
+        "--variant",
+        action="append",
+        choices=[ResponseFormat.JSON_OBJECT.value, ResponseFormat.TEXT.value],
+        default=[],
+        help=(
+            "A response_format to compare: json_object (as shipped) or text (none "
+            "requested). Default: both, in that order."
+        ),
+    )
+    experiment.add_argument(
+        "--repetitions", type=int, default=3, help="Calls per question and variant (default: 3)."
+    )
+    experiment.add_argument(
+        "--max-calls",
+        type=int,
+        required=True,
+        help="Hard limit on provider calls. The run stops before exceeding it.",
+    )
+    experiment.add_argument(
+        "--neuron-budget",
+        type=float,
+        help=(
+            "Stop before a call that could take the estimated spend past this many "
+            "neurons. An estimate from reported tokens; needs both rate options."
+        ),
+    )
+    experiment.add_argument(
+        "--input-neurons-per-million",
+        type=float,
+        help="Neurons per million input tokens of the model, from the provider's price list.",
+    )
+    experiment.add_argument(
+        "--output-neurons-per-million",
+        type=float,
+        help="Neurons per million output tokens of the model, from the provider's price list.",
+    )
+    experiment.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=0.0,
+        help="Seconds to wait between two calls (default: 0).",
+    )
+    experiment.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Where to write the results as JSON. Written even when the run stops early.",
+    )
+    experiment.add_argument(
+        "--ledger",
+        type=Path,
+        default=DEFAULT_LEDGER,
+        help=(
+            "Local record of provider runs; the experiment is entered as tier `experiment`, "
+            f"apart from smoke and acceptance (default: {DEFAULT_LEDGER})."
+        ),
+    )
 
 
 def _add_query_group(groups: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -334,6 +639,10 @@ def _policy_from(args: argparse.Namespace) -> ChunkingPolicy:
 def _dispatch(args: argparse.Namespace) -> int:
     if args.group == "query":
         return _run_query(args, sys.stdout)
+    if args.group == "eval" and args.command == "experiment":
+        return _run_experiment(args, sys.stdout)
+    if args.group == "eval" and args.command == "validate-acceptance":
+        return _run_validate_acceptance(args, sys.stdout)
     if args.group == "eval":
         return _run_eval(args, sys.stdout)
     if args.command == "validate":
@@ -700,14 +1009,95 @@ def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
         return EXIT_INVALID
 
     try:
-        dataset = load_dataset(args.dataset)
+        validate_question_delay(float(args.retrieval_delay_seconds))
+    except ValueError as exc:
+        print(f"Invalid retrieval pacing: --retrieval-delay-seconds: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+
+    problem = _e2e_argument_problem(args) or _e2e_provider_problem(args, get_settings())
+    if problem is not None:
+        print(f"Invalid end-to-end run: {problem}", file=sys.stderr)
+        return EXIT_INVALID
+
+    suite = EvaluationSuite(args.suite)
+    if args.tier is not None and not args.question_id:
+        suite = TIER_SUITES[Tier(args.tier)]
+    # Taken once, before anything runs: the commit a run is attributed to is the
+    # one it started from, whatever happens to the tree while it runs.
+    git = _git_state()
+    try:
+        full = load_dataset(args.dataset)
+        dataset = select_suite(args.dataset, full, suite)
     except EvaluationDatasetError as exc:
         print(f"Evaluation dataset error: {exc}", file=sys.stderr)
         return EXIT_INVALID
 
+    if args.question_id:
+        unknown = sorted(set(args.question_id) - {question.id for question in dataset.questions})
+        if unknown:
+            print(
+                f"Evaluation dataset error: no such question in this suite: {', '.join(unknown)}",
+                file=sys.stderr,
+            )
+            return EXIT_INVALID
+        # The dataset's own order is kept, whatever order the ids were given in.
+        dataset = dataset.model_copy(
+            update={
+                "questions": tuple(
+                    question
+                    for question in dataset.questions
+                    if question.id in set(args.question_id)
+                )
+            }
+        )
+
+    plan: Preflight | None = None
+    if args.e2e and args.tier is not None:
+        plan = _plan_provider_run(args, len(dataset.questions), get_settings(), policy, git)
+        _print_labelled(
+            f"{args.tier.upper()} PREFLIGHT",
+            describe_preflight(plan, yellow_confirmed=args.allow_yellow),
+            out,
+        )
+        for warning in plan.warnings:
+            print(f"  ! {warning}", file=out)
+        if not plan.can_start(yellow_confirmed=args.allow_yellow):
+            for blocker in plan.blockers:
+                print(f"Not started: {blocker}", file=sys.stderr)
+            if plan.zone is BudgetZone.RED:
+                print(
+                    "Not started: budget zone RED — the forecast would not leave the minimum "
+                    "reserve. Nothing was requested.",
+                    file=sys.stderr,
+                )
+            elif plan.zone is BudgetZone.YELLOW and not plan.blockers:
+                print(
+                    "Not started: budget zone YELLOW — above the target share of the daily "
+                    "budget. Start it deliberately with --allow-yellow.",
+                    file=sys.stderr,
+                )
+            return EXIT_INVALID
+        if args.preflight_only:
+            print(file=out)
+            print("Preflight only: no provider was called.", file=out)
+            return EXIT_OK
+
     corpus = resolve_corpus(args.dataset, dataset)
     try:
-        return asyncio.run(_evaluate(args, dataset, corpus, policy, pacing, out))
+        return asyncio.run(
+            _evaluate(
+                args,
+                dataset,
+                corpus,
+                policy,
+                pacing,
+                out,
+                full_count=len(full.questions),
+                plan=plan,
+                suite=suite,
+                git=git,
+            )
+        )
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return EXIT_INVALID
@@ -720,6 +1110,388 @@ def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
     except PortError as exc:
         print(f"Evaluation failed: {exc.describe()}", file=sys.stderr)
         return EXIT_INVALID
+
+
+def _e2e_argument_problem(args: argparse.Namespace) -> str | None:
+    """What is wrong with the end-to-end flags, if anything.
+
+    Checked before a provider is built, so a run that could not have written
+    its result never spends a request finding that out.
+    """
+    if args.rerun_of is not None:
+        if not args.e2e or args.tier != Tier.ACCEPTANCE.value:
+            return "--rerun-of belongs to an --e2e --tier acceptance run"
+        if not args.note:
+            return "--rerun-of needs a --note naming the provider outlier it repeats"
+    if not args.e2e:
+        if args.summary is not None or args.note:
+            return "--summary and --note belong to an --e2e run"
+        if args.tier is not None or args.preflight_only or args.allow_yellow:
+            return "--tier, --preflight-only and --allow-yellow belong to an --e2e run"
+        return None
+    if args.retrieval_only:
+        return "--e2e answers every question, which --retrieval-only rules out"
+    if args.output is None:
+        return "--e2e needs --output, or the run would be paid for and not kept"
+    if args.tier is not None:
+        if args.suite != EvaluationSuite.FULL.value:
+            return "with --tier the tier chooses the questions; leave out --suite"
+        if args.tier == Tier.ACCEPTANCE.value and args.question_id:
+            return "an acceptance run asks its whole suite; --question-id is for a smoke run"
+    return None
+
+
+def _e2e_provider_problem(args: argparse.Namespace, settings: Settings) -> str | None:
+    """Refuse an end-to-end run that would measure a development stand-in.
+
+    The deterministic adapters exist so the pipeline runs with no key and no
+    network, and every other evaluation mode is welcome to use them. An
+    end-to-end run is the one result that claims "this is what the configured
+    system does": with the echoing stub behind it, every question comes back
+    answered and every label cited, which reads as a finding about grounding
+    and is one about configuration. Checked before anything is built, so it
+    costs no request to find out.
+    """
+    real_generation = settings.llm_provider is not LLMProviderName.DETERMINISTIC
+    if not args.e2e:
+        if real_generation and not args.retrieval_only:
+            return (
+                "an answering pass against a real generation provider runs only as "
+                "--e2e --tier smoke|acceptance, with a budget preflight; use "
+                "--retrieval-only to measure retrieval alone"
+            )
+        return None
+    stand_ins = _stand_in_roles(settings)
+    if not stand_ins:
+        if args.tier is None:
+            return (
+                "an end-to-end run against a real generation provider needs --tier smoke or "
+                "--tier acceptance — there is no default for a run that spends the allocation"
+            )
+        return None
+    return (
+        f"--e2e measures real providers, and the configured {' and '.join(stand_ins)} "
+        f"provider is a development stand-in (embedding provider: "
+        f"`{settings.embedding_provider.value}`, generation provider: "
+        f"`{settings.llm_provider.value}`). Set PORTFOLIO_RAG_EMBEDDING_PROVIDER and "
+        "PORTFOLIO_RAG_LLM_PROVIDER to real providers; nothing was requested."
+    )
+
+
+def _run_experiment(args: argparse.Namespace, out: TextIO) -> int:
+    """Compare provider request configurations on fixed contexts. Paket 3, E1."""
+    settings = get_settings()
+    stand_ins = _stand_in_roles(settings)
+    if stand_ins:
+        print(
+            f"Invalid experiment: the configured {' and '.join(stand_ins)} provider is a "
+            "development stand-in, and an experiment on it measures nothing. Nothing was "
+            "requested.",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    try:
+        limits = ExperimentLimits(
+            max_calls=args.max_calls,
+            neuron_budget=args.neuron_budget,
+            input_neurons_per_million=args.input_neurons_per_million,
+            output_neurons_per_million=args.output_neurons_per_million,
+        )
+        variants = tuple(ResponseFormat(value) for value in args.variant) or DEFAULT_VARIANTS
+        if args.repetitions <= 0 or args.delay_seconds < 0:
+            raise ValueError("--repetitions must be positive and --delay-seconds not negative")
+        if len(set(variants)) != len(variants):
+            raise ValueError("each --variant may be given once")
+    except ValueError as exc:
+        print(f"Invalid experiment: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+
+    try:
+        dataset = load_dataset(args.dataset)
+    except EvaluationDatasetError as exc:
+        print(f"Evaluation dataset error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    by_id = {question.id: question for question in dataset.questions}
+    unknown = sorted(set(args.question_id) - set(by_id))
+    if unknown:
+        print(f"Evaluation dataset error: no such question: {', '.join(unknown)}", file=sys.stderr)
+        return EXIT_INVALID
+    questions = [by_id[question_id] for question_id in dict.fromkeys(args.question_id)]
+
+    try:
+        return asyncio.run(
+            _experiment(
+                args,
+                questions,
+                resolve_corpus(args.dataset, dataset),
+                limits,
+                variants,
+                out,
+            )
+        )
+    except ExperimentError as exc:
+        print(f"Invalid experiment: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    except ConfigurationError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    except AppError as exc:
+        print(f"Experiment failed: {exc.code.value}: {exc.message}", file=sys.stderr)
+        return EXIT_INVALID
+    except PortError as exc:
+        print(f"Experiment failed: {exc.describe()}", file=sys.stderr)
+        return EXIT_INVALID
+
+
+async def _experiment(
+    args: argparse.Namespace,
+    questions: Sequence[EvaluationQuestion],
+    corpus: Path,
+    limits: ExperimentLimits,
+    variants: tuple[ResponseFormat, ...],
+    out: TextIO,
+) -> int:
+    """Prepare once, run the plan, and write what was measured however the run ends."""
+    settings = get_settings().model_copy(update={"knowledge_root": corpus})
+    # One transport attempt: a call is one request, and its cost and outcome
+    # are that request's alone. A rate limit is a reason to stop, not to retry.
+    components = build_query_components(
+        settings, generation_attempts=EVALUATION_GENERATION_ATTEMPTS
+    )
+    experiment_id = new_request_id()
+    binding = set_request_id(experiment_id)
+    run: ExperimentRun | None = None
+    prepared: tuple[PreparedQuestion, ...] = ()
+    try:
+        await components.prepare()
+        prepared = await prepare_questions(
+            questions, components.retrieval, components.answers.context_policy
+        )
+        run = ExperimentRun(
+            plan=plan_calls(prepared, variants, args.repetitions),
+            llm=components.llm,
+            limits=limits,
+            delay_seconds=args.delay_seconds,
+        )
+        print(f"Experiment: {experiment_id}", file=out)
+        print(
+            f"Planned:    {len(run.plan)} calls "
+            f"({len(prepared)} questions x {len(variants)} variants x {args.repetitions}), "
+            f"limit {limits.max_calls}",
+            file=out,
+        )
+        reason = await run.run()
+        print(f"Stopped:    {reason.value} after {len(run.calls)} calls", file=out)
+        return EXIT_OK if reason in _EXPERIMENT_CLEAN_STOPS else EXIT_INVALID
+    finally:
+        if run is not None:
+            revision, dirty, _, _ = _git_state()
+            metadata = ExperimentMetadata(
+                experiment_id=experiment_id,
+                generated_at=datetime.now(UTC),
+                git_revision=revision,
+                git_dirty=dirty,
+                dataset_path=args.dataset.as_posix(),
+                dataset_sha256=dataset_fingerprint(args.dataset),
+                provider=settings.llm_provider.value,
+                model=components.llm.model,
+                repetitions=args.repetitions,
+                variants=variants,
+                delay_seconds=args.delay_seconds,
+            )
+            try:
+                write_export(args.output, export_experiment(run, prepared, metadata))
+                print(f"Results:    {args.output}", file=out)
+            finally:
+                Ledger(args.ledger).append(
+                    _experiment_ledger_entry(experiment_id, run, settings, components, args.output)
+                )
+        await components.aclose()
+        reset_request_id(binding)
+
+
+def _experiment_ledger_entry(
+    experiment_id: str,
+    run: ExperimentRun,
+    settings: Settings,
+    components: QueryComponents,
+    artifact: Path,
+) -> LedgerEntry:
+    """An experiment's line in the ledger: its own tier, its own spend."""
+    records = [call.record for call in run.calls]
+    reported = [record for record in records if record.usage_reported]
+    profile = cost_profile(settings.llm_provider.value, components.llm.model)
+    neurons = (
+        spent(records, profile, components.answers.context_policy)[0]
+        if profile is not None
+        else 0.0
+    )
+    return LedgerEntry(
+        date_utc=datetime.now(UTC).date().isoformat(),
+        run_id=experiment_id,
+        tier="experiment",
+        status="complete" if run.stop_reason is StopReason.COMPLETED else "aborted",
+        calls=len(records),
+        input_tokens=sum(record.input_tokens or 0 for record in reported),
+        output_tokens=sum(record.output_tokens or 0 for record in reported),
+        estimated_neurons=round(neurons, 1),
+        usage_coverage=round(len(reported) / len(records), 3) if records else None,
+        artifact=artifact.as_posix(),
+        abort_reason=(
+            run.stop_reason.value if run.stop_reason not in (None, StopReason.COMPLETED) else None
+        ),
+    )
+
+
+#: Ends a run is planned to have. Every other one means the provider stopped it.
+_EXPERIMENT_CLEAN_STOPS: Final = frozenset(
+    {StopReason.COMPLETED, StopReason.MAX_CALLS, StopReason.NEURON_BUDGET}
+)
+
+
+#: Where provider runs are recorded, and where earlier exports are read from.
+DEFAULT_LEDGER: Final = Path("evaluation/results/provider-ledger.jsonl")
+DEFAULT_HISTORY: Final = Path("evaluation/results")
+
+
+def _generation_model(settings: Settings) -> str:
+    """The model the configured generation provider will use, from settings alone."""
+    if settings.llm_provider is LLMProviderName.CLOUDFLARE_WORKERS_AI:
+        return settings.cloudflare_workers_ai_chat_model
+    if settings.llm_provider is LLMProviderName.MISTRAL:
+        return settings.mistral_chat_model
+    return settings.llm_provider.value
+
+
+def _plan_provider_run(
+    args: argparse.Namespace,
+    questions: int,
+    settings: Settings,
+    retrieval_policy: RetrievalPolicy,
+    git: GitState,
+) -> Preflight:
+    """The preflight of a tiered run: computed from files, before anything is built."""
+    provider = settings.llm_provider.value
+    model = _generation_model(settings)
+    requirements = ProfileRequirements(
+        provider=provider,
+        model=model,
+        prompt_version=GROUNDED_PROMPT_VERSION,
+        grounding_check_version=GROUNDING_CHECK_VERSION,
+        response_format=GROUNDED_RESPONSE_FORMAT.value,
+        max_prompt_tokens=DEFAULT_CONTEXT_POLICY.max_prompt_tokens,
+        output_reserve_tokens=DEFAULT_CONTEXT_POLICY.output_reserve_tokens,
+        top_k=retrieval_policy.top_k,
+        min_similarity=retrieval_policy.min_similarity,
+    )
+    plan = preflight(
+        tier=Tier(args.tier),
+        questions=questions,
+        provider=provider,
+        model=model,
+        profile=cost_profile(provider, model),
+        history=load_history(args.history, requirements),
+        ledger=Ledger(args.ledger).read(),
+        today=datetime.now(UTC).date(),
+        policy=BudgetPolicy(daily_budget=args.daily_budget, minimum_reserve=args.minimum_reserve),
+        commit=git.revision,
+        dirty=git.dirty,
+        rerun_of=args.rerun_of,
+        source_identity=git.source_identity,
+    )
+    target = args.output.parent if args.output.parent != Path() else Path.cwd()
+    if not target.is_dir():
+        return replace(plan, blockers=(*plan.blockers, f"export directory {target} does not exist"))
+    return plan
+
+
+def _operations(
+    args: argparse.Namespace,
+    plan: Preflight,
+    guard: RunGuard,
+    report: E2EReport,
+    verdict: SmokeVerdict | None,
+) -> dict[str, Any]:
+    calls = [call for record in report.records for call in record.provider_calls]
+    reported = [call for call in calls if call.usage_reported]
+    known_after = plan.known_consumption + guard.estimated_neurons
+    return {
+        **plan.fields(),
+        "status": "complete" if report.aborted is None else "aborted",
+        "abort_reason": report.aborted.reason.value if report.aborted else None,
+        "observed": {
+            "calls": len(calls),
+            "input_tokens": sum(call.input_tokens or 0 for call in reported) if reported else None,
+            "output_tokens": (
+                sum(call.output_tokens or 0 for call in reported) if reported else None
+            ),
+            "usage_coverage": round(len(reported) / len(calls), 3) if calls else None,
+            "estimated_neurons": round(guard.estimated_neurons, 1),
+            "unreported_calls": guard.unreported_calls,
+        },
+        "known_daily_after": round(known_after, 1),
+        "nominal_reserve_after": round(plan.policy.daily_budget - known_after, 1),
+        "guard": {
+            "status": guard.status,
+            "projected_final_neurons": (
+                round(guard.projected_final_neurons, 1)
+                if guard.projected_final_neurons is not None
+                else None
+            ),
+            "projected_final_share": (
+                round(guard.projected_final_neurons / plan.policy.daily_budget, 3)
+                if guard.projected_final_neurons is not None
+                else None
+            ),
+            "projected_band": guard.projected_band.value if guard.projected_band else None,
+        },
+        "smoke": verdict.fields() if verdict is not None else None,
+    }
+
+
+def _ledger_entry(
+    run_id: str,
+    plan: Preflight,
+    guard: RunGuard,
+    report: E2EReport,
+    verdict: SmokeVerdict | None,
+    artifact: Path,
+    git: GitState,
+    rerun_of: str | None,
+) -> LedgerEntry:
+    calls = [call for record in report.records for call in record.provider_calls]
+    reported = [call for call in calls if call.usage_reported]
+    return LedgerEntry(
+        date_utc=datetime.now(UTC).date().isoformat(),
+        run_id=run_id,
+        tier=plan.tier.value,
+        status="complete" if report.aborted is None else "aborted",
+        calls=len(calls),
+        input_tokens=sum(call.input_tokens or 0 for call in reported),
+        output_tokens=sum(call.output_tokens or 0 for call in reported),
+        estimated_neurons=round(guard.estimated_neurons, 1),
+        usage_coverage=round(len(reported) / len(calls), 3) if calls else None,
+        artifact=artifact.as_posix(),
+        abort_reason=report.aborted.reason.value if report.aborted else None,
+        smoke_passed=verdict.passed if verdict is not None else None,
+        commit_sha=git.revision,
+        git_dirty=git.dirty,
+        rerun_of=rerun_of,
+        failed_gates=[name for name, ok in report.gates.items() if not ok],
+        release_source_identity=git.source_identity,
+    )
+
+
+def _stand_in_roles(settings: Settings) -> list[str]:
+    """Which configured providers are development stand-ins."""
+    return [
+        role
+        for role, is_stand_in in (
+            ("embedding", settings.embedding_provider is EmbeddingProviderName.DETERMINISTIC),
+            ("generation", settings.llm_provider is LLMProviderName.DETERMINISTIC),
+        )
+        if is_stand_in
+    ]
 
 
 def _pacing_from(args: argparse.Namespace) -> GenerationPacing | None:
@@ -749,6 +1521,9 @@ def _paced_answers(components: QueryComponents, pacing: GenerationPacing) -> Gro
     That provider was built with a single transport attempt (see
     :data:`EVALUATION_GENERATION_ATTEMPTS`), so the budget the pacer enforces
     is the whole budget: its attempts are requests, one for one.
+
+    No request deadline: pacing waits happen beneath the port, so a paced
+    question legitimately takes longer than any production request may.
     """
     return GroundedAnswerService(
         retrieval=components.retrieval,
@@ -764,7 +1539,13 @@ async def _evaluate(
     policy: RetrievalPolicy,
     pacing: GenerationPacing | None,
     out: TextIO,
+    *,
+    full_count: int,
+    plan: Preflight | None = None,
+    suite: EvaluationSuite = EvaluationSuite.FULL,
+    git: GitState | None = None,
 ) -> int:
+    git = git if git is not None else _git_state()
     settings: Settings = get_settings().model_copy(
         update={
             "knowledge_root": corpus,
@@ -778,18 +1559,81 @@ async def _evaluate(
         settings,
         generation_attempts=None if pacing is None else EVALUATION_GENERATION_ATTEMPTS,
     )
+    # One id for the whole run, bound as the correlation id every log line
+    # already carries — so the log lines of a run and its export name the same
+    # run, without a second kind of id.
+    run_id = new_request_id()
+    run_binding = set_request_id(run_id)
     try:
         await components.prepare()
 
+        print(f"Run:     {run_id}", file=out)
         print(f"Dataset: {args.dataset}  (version {dataset.version})", file=out)
+        if suite is not EvaluationSuite.FULL:
+            # Only a subset says so: a full run's header is the one it always had.
+            print(
+                f"Suite:   {suite.value}  ({len(dataset.questions)} of {full_count} questions)",
+                file=out,
+            )
+        if args.question_id:
+            print(
+                f"Selection: {len(dataset.questions)} of {full_count} questions, by id",
+                file=out,
+            )
         print(f"Corpus:  {corpus}", file=out)
         print(file=out)
         _print_labelled("Embedding space", components.embeddings.spec.describe(), out)
         print(file=out)
         _print_labelled("Retrieval policy", components.retrieval.policy.describe(), out)
 
-        report = await run_retrieval_evaluation(dataset, components.retrieval)
+        delay = float(args.retrieval_delay_seconds)
+        if delay > 0:
+            # Said before the first request, so a live run shows what it is
+            # about to do. Absent at the default, whose header is unchanged.
+            questions = len(dataset.questions)
+            print(file=out)
+            _print_labelled(
+                "Retrieval pacing",
+                (
+                    ("questions", str(questions)),
+                    ("delay", f"{delay}s between questions"),
+                    ("pauses", f"{max(questions - 1, 0)} per pass"),
+                    ("generation", "off (--retrieval-only)" if args.retrieval_only else "on"),
+                ),
+                out,
+            )
+
+        if args.e2e:
+            return await _evaluate_e2e(
+                args,
+                dataset,
+                settings,
+                components,
+                pacing,
+                out,
+                full_count=full_count,
+                run_id=run_id,
+                plan=plan,
+                suite=suite,
+                git=git,
+            )
+
+        report = await run_retrieval_evaluation(dataset, components.retrieval, delay_seconds=delay)
         _print_retrieval_report(dataset, report, out)
+
+        if args.output is not None:
+            # Written before any generation, so a generation failure later in
+            # the run cannot cost the retrieval data already paid for.
+            metadata = _run_metadata(
+                args, dataset, settings, components, full_count, run_id, suite, git
+            )
+            try:
+                write_export(args.output, export_retrieval(report, metadata))
+            except OSError as exc:
+                print(f"Retrieval export could not be written: {exc}", file=sys.stderr)
+                return EXIT_INVALID
+            print(file=out)
+            print(f"Retrieval export: {args.output}", file=out)
 
         if args.retrieval_only:
             print(file=out)
@@ -801,7 +1645,7 @@ async def _evaluate(
             print(file=out)
             _print_labelled("Generation pacing", pacing.describe(), out)
 
-        grounding = await run_grounding_evaluation(dataset, answers)
+        grounding = await run_grounding_evaluation(dataset, answers, delay_seconds=delay)
         _print_grounding_report(grounding, out)
 
         # A leak is the one result that makes the run itself a failure. Weak
@@ -809,6 +1653,365 @@ async def _evaluate(
         return EXIT_INVALID if report.internal_leaks else EXIT_OK
     finally:
         await components.aclose()
+        reset_request_id(run_binding)
+
+
+async def _evaluate_e2e(
+    args: argparse.Namespace,
+    dataset: EvaluationDataset,
+    settings: Settings,
+    components: QueryComponents,
+    pacing: GenerationPacing | None,
+    out: TextIO,
+    *,
+    full_count: int,
+    run_id: str,
+    plan: Preflight | None = None,
+    suite: EvaluationSuite = EvaluationSuite.FULL,
+    git: GitState | None = None,
+) -> int:
+    """One pass per question, then the same result three ways: stdout, JSON, Markdown."""
+    git = git if git is not None else _git_state()
+    answers = components.answers if pacing is None else _paced_answers(components, pacing)
+    if pacing is not None:
+        print(file=out)
+        _print_labelled("Generation pacing", pacing.describe(), out)
+
+    guard = (
+        RunGuard(
+            preflight=plan,
+            total_questions=len(dataset.questions),
+            context_policy=components.answers.context_policy,
+        )
+        if plan is not None
+        else None
+    )
+    report = await run_e2e_evaluation(
+        dataset, answers, delay_seconds=float(args.retrieval_delay_seconds), guard=guard
+    )
+    verdict = smoke_verdict(report) if plan is not None and plan.tier is Tier.SMOKE else None
+    operations = (
+        _operations(args, plan, guard, report, verdict)
+        if plan is not None and guard is not None
+        else None
+    )
+    _print_retrieval_report(dataset, report.retrieval, out)
+    _print_e2e_report(report, out)
+
+    metadata = E2ERunMetadata(
+        retrieval=_run_metadata(
+            args, dataset, settings, components, full_count, run_id, suite, git
+        ),
+        generation_provider=settings.llm_provider.value,
+        generation_model=components.llm.model,
+        prompt_version=GROUNDED_PROMPT_VERSION,
+        context_policy=components.answers.context_policy,
+        generation_delay_seconds=float(args.generation_delay_seconds),
+        corpus=corpus_identity(components.chunks),
+        notes=tuple(args.note),
+        selected_question_ids=tuple(question.id for question in dataset.questions)
+        if args.question_id
+        else (),
+        tier=args.tier,
+        transport_attempts=None if pacing is None else EVALUATION_GENERATION_ATTEMPTS,
+        rerun_of=args.rerun_of,
+    )
+    payload = with_release_acceptance(export_e2e(report, metadata, operations))
+    try:
+        write_export(args.output, payload)
+        if args.summary is not None:
+            args.summary.write_text(render_summary(payload), encoding="utf-8")
+    except OSError as exc:
+        print(f"End-to-end export could not be written: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    finally:
+        # Whatever the export did, the calls were made and paid for.
+        if plan is not None and guard is not None:
+            Ledger(args.ledger).append(
+                _ledger_entry(run_id, plan, guard, report, verdict, args.output, git, args.rerun_of)
+            )
+    print(file=out)
+    print(f"End-to-end export: {args.output}", file=out)
+    if args.summary is not None:
+        print(f"Summary:           {args.summary}", file=out)
+    if operations is not None:
+        print(
+            f"Estimated spend:   {operations['observed']['estimated_neurons']:,.0f} neurons "
+            f"(estimate); known local today {operations['known_daily_after']:,.0f}",
+            file=out,
+        )
+    release = payload["release_acceptance"]
+    print(f"Release acceptance: {release['verdict']}", file=out)
+    for reason in release["reasons"]:
+        print(f"  - {reason}", file=out)
+    if verdict is not None:
+        state = "PASS" if verdict.passed else "FAIL"
+        print(f"Smoke:             {state}", file=out)
+        for reason in verdict.reasons:
+            print(f"  - {reason}", file=out)
+
+    if report.aborted is not None:
+        if report.aborted.reason is AbortReason.INTERNAL_DEFECT:
+            # A defect in this code, not a provider failure: the partial results
+            # above are written, and the run is reported as the crash it was.
+            print(
+                f"Run aborted at {report.aborted.question_id} by an internal defect "
+                f"({report.aborted.error_type}); the export holds the questions before it.",
+                file=sys.stderr,
+            )
+            return EXIT_INTERNAL_ERROR
+        print(
+            f"Run stopped after {report.aborted.question_id}: {report.aborted.reason.value}. "
+            "The export holds what was measured. It is not restarted automatically.",
+            file=sys.stderr,
+        )
+        if args.tier != Tier.ACCEPTANCE.value:
+            return EXIT_INVALID
+    if args.tier == Tier.ACCEPTANCE.value:
+        # An acceptance run is judged by its release verdict, not by its gates
+        # alone: a dirty tree with green gates is still not a release acceptance.
+        return EXIT_OK if release["verdict"] == "PASS" else EXIT_ACCEPTANCE_FAILED
+    if verdict is not None and not verdict.passed:
+        return EXIT_INVALID
+    # The gates are what makes a run a failure; the measurements are numbers.
+    return EXIT_OK if report.passed else EXIT_INVALID
+
+
+def _print_e2e_report(report: E2EReport, out: TextIO) -> None:
+    answerable = report.answerable
+    answered = sum(1 for record in answerable if record.outcome is AnswerOutcome.ANSWERED)
+    must_refuse = report.must_refuse
+    refused = sum(1 for record in must_refuse if record.is_controlled_refusal)
+    published = sum(len(record.citations) for record in report.records)
+    verified = sum(record.verified_citations for record in report.records)
+
+    print(file=out)
+    _print_labelled(
+        "End to end",
+        (
+            ("answered", str(report.count(AnswerOutcome.ANSWERED))),
+            ("no knowledge", str(report.count(AnswerOutcome.NO_KNOWLEDGE))),
+            ("not grounded", str(report.count(AnswerOutcome.NOT_GROUNDED))),
+            ("errors", str(report.count(None))),
+            ("answerable answered", f"{answered}/{len(answerable)}"),
+            ("refusals correct", f"{refused}/{len(must_refuse)}"),
+            ("citations verified", f"{verified}/{published}"),
+        ),
+        out,
+    )
+    print(file=out)
+    _print_labelled(
+        "Gates",
+        tuple((name, "pass" if ok else "FAIL") for name, ok in report.gates.items()),
+        out,
+    )
+
+    failing = [record for record in report.records if record.failures]
+    if not failing:
+        print(file=out)
+        print("No end-to-end failures.", file=out)
+        return
+
+    print(file=out)
+    print(f"End-to-end failures ({len(failing)}):", file=out)
+    for record in failing:
+        reasons = ", ".join(failure.value for failure in record.failures)
+        print(f"  ✗ {record.question.id}  {reasons}", file=out)
+        if record.error is not None:
+            # Technical facts only — see `GenerationFailure`.
+            known = ", ".join(
+                f"{name}={value}"
+                for name, value in record.error.fields().items()
+                if value is not None
+            )
+            print(f"      {record.error_code}: {known}", file=out)
+
+
+def _run_metadata(
+    args: argparse.Namespace,
+    dataset: EvaluationDataset,
+    settings: Settings,
+    components: QueryComponents,
+    full_count: int,
+    run_id: str,
+    suite: EvaluationSuite,
+    git: GitState,
+) -> RunMetadata:
+    """What the export says about its run — named fields only, never settings wholesale."""
+    return RunMetadata(
+        run_id=run_id,
+        generated_at=datetime.now(UTC),
+        git_revision=git.revision,
+        git_dirty=git.dirty,
+        git_tag=git.tag,
+        source_identity=git.source_identity,
+        dataset_path=args.dataset.as_posix(),
+        dataset_sha256=dataset_fingerprint(args.dataset),
+        dataset=dataset,
+        dataset_question_count=full_count,
+        suite=suite,
+        suite_identity=suite_identity(args.dataset, dataset, suite),
+        embedding=components.embeddings.spec,
+        vector_store=settings.vector_store.value,
+        policy=components.retrieval.policy,
+        retrieval_delay_seconds=float(args.retrieval_delay_seconds),
+    )
+
+
+def _run_validate_acceptance(args: argparse.Namespace, out: TextIO) -> int:
+    """Judge one export as a release-acceptance artifact. Local; calls nothing."""
+    try:
+        payload = json.loads(args.artifact.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"Artifact could not be read as JSON: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+
+    check = validate_artifact(payload, secrets=_configured_secrets())
+    publication = not args.development
+    _print_labelled(
+        "Release acceptance",
+        (
+            ("artifact", args.artifact.as_posix()),
+            ("mode", "publication" if publication else "development"),
+            ("verdict", check.verdict or "unreadable"),
+            ("consistent", "yes" if check.consistent else "NO"),
+        ),
+        out,
+    )
+    for reason in check.reasons:
+        print(f"  - {reason}", file=out)
+    for problem in check.problems:
+        print(f"  ✗ {problem}", file=out)
+    print(file=out)
+    if check.accepted(publication=publication):
+        print(
+            "Accepted: a passing release acceptance that may be published."
+            if publication
+            else "Accepted as a development artifact: consistent, not a release acceptance."
+            if check.verdict != "PASS"
+            else "Accepted as a development artifact.",
+            file=out,
+        )
+        return EXIT_OK
+    print(
+        "Rejected: the artifact is inconsistent or carries something that must not be published."
+        if not check.consistent
+        else "Rejected for publication: not a passing release acceptance.",
+        file=out,
+    )
+    return EXIT_INVALID
+
+
+def _configured_secrets() -> list[str]:
+    """Credential values from the environment, to make sure none was written
+    down. Compared, never printed."""
+    settings = get_settings()
+    values: list[str] = [
+        secret.get_secret_value()
+        for secret in (
+            settings.mistral_api_key,
+            settings.cloudflare_api_token,
+            settings.cloudflare_workers_ai_token,
+            settings.edge_shared_secret,
+        )
+        if secret is not None
+    ]
+    values += [
+        value
+        for value in (settings.cloudflare_account_id, settings.cloudflare_vectorize_index)
+        if value
+    ]
+    return values
+
+
+class GitState(NamedTuple):
+    """The commit a run starts from, whether the tree differs from it, the
+    release tag on it, and the release-relevant content it holds. ``None``
+    wherever git could not say."""
+
+    revision: str | None
+    dirty: bool | None
+    tag: str | None = None
+    source_identity: str | None = None
+
+
+def _git_state() -> GitState:
+    """The commit this run was made from, and whether the tree had changes.
+
+    Unknown when git is missing or this is not a checkout: an unknown revision
+    is recorded as unknown rather than guessed. Untracked files count as
+    changes; the run-output directories (:data:`GIT_DIRTY_EXCLUDES`) do not.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return GitState(None, None)
+    # Pathspecs from the repository root, wherever the command runs from.
+    excludes = [f":(top,exclude){path}" for path in GIT_DIRTY_EXCLUDES]
+    try:
+        revision = subprocess.run(  # noqa: S603 - fixed arguments, no user input
+            [git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True, timeout=5
+        ).stdout.strip()
+        status = subprocess.run(  # noqa: S603 - fixed arguments, no user input
+            [git, "status", "--porcelain", "--", ":(top)", *excludes],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout
+        # No tag on HEAD is a normal state, not an error: check=False.
+        tag = subprocess.run(  # noqa: S603 - fixed arguments, no user input
+            [git, "describe", "--tags", "--exact-match", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        ).stdout.strip()
+        identity = _source_identity(git)
+    except (OSError, subprocess.SubprocessError):
+        return GitState(None, None)
+    return GitState(revision or None, bool(status.strip()), tag or None, identity)
+
+
+def _source_identity(git: str) -> str:
+    """The release candidate as content: every file under
+    :data:`SOURCE_IDENTITY_INCLUDES` that git tracks or would track, read from
+    the working tree, minus :data:`SOURCE_IDENTITY_EXCLUDES`.
+
+    Working-tree content rather than ``HEAD``: on a clean tree the two are the
+    same, and on a dirty one the identity describes what actually runs.
+    """
+    root = Path(
+        subprocess.run(  # noqa: S603 - fixed arguments, no user input
+            [git, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout.strip()
+    )
+    listed = subprocess.run(  # noqa: S603 - fixed arguments, no user input
+        [
+            git,
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *(f":(top){path}" for path in SOURCE_IDENTITY_INCLUDES),
+            *(f":(top,exclude){path}" for path in SOURCE_IDENTITY_EXCLUDES),
+        ],
+        capture_output=True,
+        check=True,
+        timeout=10,
+        cwd=root,
+    ).stdout.decode("utf-8")
+    paths = sorted({path for path in listed.split("\0") if path})
+    # A tracked file deleted from the working tree is simply absent: the
+    # listing it leaves behind already differs.
+    return source_identity(
+        (path, (root / path).read_bytes()) for path in paths if (root / path).is_file()
+    )
 
 
 def _print_retrieval_report(

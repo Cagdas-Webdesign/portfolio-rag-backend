@@ -180,3 +180,30 @@ def test_the_workers_ai_token_is_never_rendered_in_the_settings_repr():
 
     assert "test-token-not-a-real-credential" not in repr(settings)
     assert "test-token-not-a-real-credential" not in str(settings)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "mistral_api_key",
+        "cloudflare_api_token",
+        "cloudflare_workers_ai_token",
+        "edge_shared_secret",
+    ],
+)
+def test_whitespace_around_a_secret_is_dropped(field: str):
+    """A secret from a file or secret manager often ends in a newline, which an
+    HTTP client refuses to send in a header."""
+    settings = Settings.model_validate({field: "  value-123\n"})
+
+    assert getattr(settings, field).get_secret_value() == "value-123"
+
+
+@pytest.mark.parametrize("field", ["cloudflare_account_id", "cloudflare_vectorize_index"])
+def test_whitespace_around_an_identifier_is_dropped(field: str):
+    assert getattr(Settings.model_validate({field: "abc123\r\n"}), field) == "abc123"
+
+
+def test_a_whitespace_only_credential_is_absent_not_blank():
+    blank = " \n"
+    assert Settings(cloudflare_workers_ai_token=blank).cloudflare_workers_ai_token is None

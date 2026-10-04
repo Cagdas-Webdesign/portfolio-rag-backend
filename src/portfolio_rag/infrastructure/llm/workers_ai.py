@@ -45,7 +45,7 @@ from typing import Any, Final
 
 import httpx2 as httpx
 
-from portfolio_rag.ports.errors import LLMProviderError
+from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
 from portfolio_rag.ports.llm import (
     GenerationRequest,
     GenerationResponse,
@@ -170,12 +170,28 @@ class WorkersAIChatProvider:
                 error = LLMProviderError(
                     f"Workers AI generation timed out after {self._timeout_seconds}s.",
                     retryable=True,
+                    kind=ProviderFailureKind.TIMEOUT,
                 )
-            except httpx.RequestError:
+            except (httpx.LocalProtocolError, httpx.UnsupportedProtocol) as exc:
+                # The request could not be built or sent from here — an
+                # illegal header value (a credential with a stray newline or
+                # space), a URL scheme the client cannot speak. Nothing reached
+                # the network, so this is not "unreachable", and asking again
+                # cannot change it. The exception text can quote the header —
+                # that is, the token — so only its class is named.
+                error = LLMProviderError(
+                    "Workers AI request could not be sent: it is invalid locally "
+                    f"({type(exc).__name__}). Check the configured account id and token.",
+                    retryable=False,
+                    kind=ProviderFailureKind.UNSPECIFIED,
+                )
+            except httpx.RequestError as exc:
                 # The exception text can carry the full URL; the message is
                 # composed here so nothing unexpected reaches a log.
                 error = LLMProviderError(
-                    "Workers AI could not be reached for generation.", retryable=True
+                    f"Workers AI could not be reached for generation ({type(exc).__name__}).",
+                    retryable=True,
+                    kind=ProviderFailureKind.UNREACHABLE,
                 )
             else:
                 if response.status_code < 400:
@@ -186,6 +202,7 @@ class WorkersAIChatProvider:
                 )
 
             if not error.retryable or attempt == self._max_attempts:
+                error.attempts = attempt
                 raise error
             await self._sleep(self._retry_delay)
 
@@ -220,18 +237,25 @@ def _status_error(
     """Map an HTTP status to a message. The response body is never included."""
     if status_code in _AUTH_STATUS:
         return LLMProviderError(
-            f"Workers AI rejected the credentials (HTTP {status_code}).", retryable=False
+            f"Workers AI rejected the credentials (HTTP {status_code}).",
+            retryable=False,
+            kind=ProviderFailureKind.HTTP_STATUS,
+            status_code=status_code,
         )
     if status_code == 429:
         return LLMProviderError(
             "Workers AI rate limit reached during generation.",
             retryable=True,
             retry_after_seconds=retry_after_seconds,
+            kind=ProviderFailureKind.RATE_LIMITED,
+            status_code=status_code,
         )
     return LLMProviderError(
         f"Workers AI returned HTTP {status_code} during generation.",
         retryable=status_code in _RETRYABLE_STATUS,
         retry_after_seconds=retry_after_seconds,
+        kind=ProviderFailureKind.HTTP_STATUS,
+        status_code=status_code,
     )
 
 
@@ -264,9 +288,15 @@ def _decode_json(response: httpx.Response) -> dict[str, Any]:
     try:
         body = response.json()
     except ValueError as exc:
-        raise LLMProviderError("Workers AI returned a body that is not JSON.") from exc
+        raise LLMProviderError(
+            "Workers AI returned a body that is not JSON.",
+            kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        ) from exc
     if not isinstance(body, dict):
-        raise LLMProviderError("Workers AI returned JSON that is not an object.")
+        raise LLMProviderError(
+            "Workers AI returned JSON that is not an object.",
+            kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        )
     return body
 
 
@@ -278,35 +308,67 @@ def _parse_completion(body: dict[str, Any], *, fallback_model: str) -> Generatio
     false is a failure even when it arrived with HTTP 200.
     """
     if body.get("success") is False:
-        raise LLMProviderError("Workers AI reported a failed generation.")
+        raise LLMProviderError(
+            "Workers AI reported a failed generation.", kind=ProviderFailureKind.MALFORMED_RESPONSE
+        )
 
     result = body.get("result")
     if not isinstance(result, dict):
-        raise LLMProviderError("Workers AI response carries no result object.")
+        raise LLMProviderError(
+            "Workers AI response carries no result object.",
+            kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        )
+
+    # Read before the shape is judged, so that a response that turns out not
+    # to be a completion still says what it cost and, once known, why it ended.
+    usage = _parse_usage(result.get("usage"))
 
     choices = result.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise LLMProviderError("Workers AI response contains no choices.")
+        raise _malformed("Workers AI response contains no choices.", usage=usage)
 
     first = choices[0]
     if not isinstance(first, dict):
-        raise LLMProviderError("Workers AI choice is not an object.")
+        raise _malformed("Workers AI choice is not an object.", usage=usage)
+
+    raw_finish = first.get("finish_reason")
+    finish_reason = raw_finish if isinstance(raw_finish, str) else None
 
     message = first.get("message")
     if not isinstance(message, dict):
-        raise LLMProviderError("Workers AI choice carries no message.")
+        raise _malformed(
+            "Workers AI choice carries no message.", finish_reason=finish_reason, usage=usage
+        )
 
-    finish_reason = first.get("finish_reason")
+    text = _answer_text(message)
+    if text is None:
+        raise _malformed(
+            "Workers AI message carries no text content.",
+            finish_reason=finish_reason,
+            usage=usage,
+        )
 
     return GenerationResponse(
-        text=_answer_text(message),
+        text=text,
         model=fallback_model,
-        finish_reason=finish_reason if isinstance(finish_reason, str) else None,
-        usage=_parse_usage(result.get("usage")),
+        finish_reason=finish_reason,
+        usage=usage,
     )
 
 
-def _answer_text(message: dict[str, Any]) -> str:
+def _malformed(
+    message: str, *, finish_reason: str | None = None, usage: TokenUsage | None = None
+) -> LLMProviderError:
+    """A response that is not a completion, with whatever metadata it did carry."""
+    return LLMProviderError(
+        message,
+        kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        finish_reason=finish_reason,
+        usage=usage,
+    )
+
+
+def _answer_text(message: dict[str, Any]) -> str | None:
     """Take the final assistant text, and nothing that sits next to it.
 
     ``content`` is normally the string the model finished with. Reasoning
@@ -332,7 +394,7 @@ def _answer_text(message: dict[str, Any]) -> str:
         ]
         if parts:
             return "".join(parts)
-    raise LLMProviderError("Workers AI message carries no text content.")
+    return None
 
 
 def _parse_usage(raw: object) -> TokenUsage | None:

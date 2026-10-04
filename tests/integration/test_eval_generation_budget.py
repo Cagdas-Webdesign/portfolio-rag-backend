@@ -41,7 +41,7 @@ FAKE_ACCOUNT = "test-account-id"
 #: repeated here — if the default moves, these counts move with it.
 EVAL_ATTEMPTS = GenerationPacing().max_attempts
 
-ANSWER = '{"answer": "Yes.", "sources": ["S1"]}'
+ANSWER = '{"answer": "Yes.", "sources": ["S1"], "support": "stated"}'
 
 
 class _Wire:

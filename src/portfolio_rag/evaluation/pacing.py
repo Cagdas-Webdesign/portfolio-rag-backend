@@ -146,6 +146,7 @@ class PacedLLMProvider:
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
         """Generate once, waiting for a slot and retrying a refused call."""
         last_error: LLMProviderError | None = None
+        requests_made = 0
         for attempt in range(1, self._pacing.max_attempts + 1):
             await self._wait(self._delay_before(attempt, last_error))
             self._last_started = self._clock()
@@ -155,7 +156,11 @@ class PacedLLMProvider:
                 # A provider that will not answer differently next time is
                 # reported now. So is one that has used up the budget: the run
                 # fails, which is the result, rather than retrying forever.
+                requests_made += exc.attempts
                 if not exc.retryable or attempt == self._pacing.max_attempts:
+                    # The error that ends the generation reports every request
+                    # made for it, not only the adapter's share of the last one.
+                    exc.attempts = requests_made
                     raise
                 last_error = exc
 

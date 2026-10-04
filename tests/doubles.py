@@ -26,10 +26,12 @@ unplugging the network is not a test.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
 import re
+import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -51,6 +53,7 @@ from portfolio_rag.ports.errors import (
 )
 from portfolio_rag.ports.llm import GenerationRequest, GenerationResponse, MessageRole
 from portfolio_rag.ports.vector_store import VectorMatch, VectorQuery
+from portfolio_rag.rag.verification import GROUNDING_CHECK_INSTRUCTIONS
 
 # --- generation --------------------------------------------------------------
 
@@ -69,14 +72,36 @@ class ScriptedReply:
 
     error: Exception | None = None
 
+    finish_reason: str = "stop"
+    """Why the provider says the model stopped. ``length`` is a reply cut off
+    at the output limit."""
+
+    support: str | None = "stated"
+    """The verdict the reply carries. ``stated`` by default, so that a test
+    about labels, blanks or citations reaches the check it is about instead of
+    being refused for a missing verdict. ``None`` leaves the field out."""
+
     def render(self) -> str:
         if self.raw_text is not None:
             return self.raw_text
-        return json.dumps({"answer": self.answer or "", "sources": list(self.sources)})
+        payload: dict[str, object] = {"answer": self.answer or "", "sources": list(self.sources)}
+        if self.support is not None:
+            payload["support"] = self.support
+        return json.dumps(payload)
 
 
 def grounded(answer: str, *sources: str) -> ScriptedReply:
     return ScriptedReply(answer=answer, sources=sources)
+
+
+def checked(verdict: str) -> ScriptedReply:
+    """A reply to the grounding check, in its contract."""
+    return ScriptedReply(raw_text=json.dumps({"verdict": verdict}))
+
+
+def is_grounding_check(request: GenerationRequest) -> bool:
+    """Whether *request* is the second question, not the generation."""
+    return request.messages[0].content == GROUNDING_CHECK_INSTRUCTIONS
 
 
 class ScriptedLLMProvider:
@@ -84,9 +109,13 @@ class ScriptedLLMProvider:
 
     MODEL: Final = "scripted-test-model"
 
-    def __init__(self, *replies: ScriptedReply) -> None:
+    def __init__(
+        self, *replies: ScriptedReply, grounding_check: ScriptedReply | None = None
+    ) -> None:
         self._replies = list(replies) or [grounded("A scripted answer.", "S1")]
+        self._check = grounding_check or checked("supported")
         self.requests: list[GenerationRequest] = []
+        self.check_requests: list[GenerationRequest] = []
 
     @property
     def model(self) -> str:
@@ -94,14 +123,30 @@ class ScriptedLLMProvider:
 
     @property
     def call_count(self) -> int:
+        """Generations only. The grounding check is counted in `check_count`."""
         return len(self.requests)
 
+    @property
+    def check_count(self) -> int:
+        return len(self.check_requests)
+
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
+        if is_grounding_check(request):
+            # Scripted separately and confirmed by default, so that a test
+            # about generation is not also a test about the check.
+            self.check_requests.append(request)
+            if self._check.error is not None:
+                raise self._check.error
+            return GenerationResponse(
+                text=self._check.render(), model=self.MODEL, finish_reason="stop"
+            )
         self.requests.append(request)
         reply = self._replies[min(len(self.requests) - 1, len(self._replies) - 1)]
         if reply.error is not None:
             raise reply.error
-        return GenerationResponse(text=reply.render(), model=self.MODEL, finish_reason="stop")
+        return GenerationResponse(
+            text=reply.render(), model=self.MODEL, finish_reason=reply.finish_reason
+        )
 
 
 class DecidingLLMProvider:
@@ -134,6 +179,10 @@ class DecidingLLMProvider:
         return len(self.requests)
 
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
+        if is_grounding_check(request):
+            return GenerationResponse(
+                text=checked("supported").render(), model=self.MODEL, finish_reason="stop"
+            )
         self.requests.append(request)
         user = "\n".join(
             message.content for message in request.messages if message.role is MessageRole.USER
@@ -141,12 +190,17 @@ class DecidingLLMProvider:
         question = user.rpartition("QUESTION\n")[2].strip()
 
         if any(declined in question for declined in self._declines):
-            payload = {"answer": "The provided passages do not cover this.", "sources": []}
+            payload = {
+                "answer": "The provided passages do not cover this.",
+                "sources": [],
+                "support": "none",
+            }
         else:
             labels = _SOURCE_LABEL.findall(user)
             payload = {
                 "answer": "A scripted grounded answer.",
                 "sources": labels[:1],
+                "support": "stated",
             }
         return GenerationResponse(text=json.dumps(payload), model=self.MODEL, finish_reason="stop")
 
@@ -225,6 +279,57 @@ class LexicalEmbeddingProvider:
             values[0] = 1.0
             norm = 1.0
         return tuple(value / norm for value in values)
+
+
+class DelayedLLMProvider:
+    """Delays each call before handing it to *inner* — for deadline tests.
+
+    ``delays[n]`` is how long call ``n`` takes (the last value repeats; none
+    means no delay). ``blocking`` spends that time without yielding, which
+    lets a deadline pass *between* two calls rather than during one.
+    """
+
+    def __init__(self, inner: Any, *, delays: Sequence[float] = (), blocking: bool = False) -> None:
+        self._inner = inner
+        self._delays = tuple(delays)
+        self._blocking = blocking
+        self.started = 0
+        self.completed = 0
+
+    @property
+    def model(self) -> str:
+        return str(self._inner.model)
+
+    async def generate(self, request: GenerationRequest) -> GenerationResponse:
+        index = self.started
+        self.started += 1
+        delay = self._delays[min(index, len(self._delays) - 1)] if self._delays else 0.0
+        if self._blocking:
+            time.sleep(delay)
+            await asyncio.sleep(0)
+        else:
+            await asyncio.sleep(delay)
+        response: GenerationResponse = await self._inner.generate(request)
+        self.completed += 1
+        return response
+
+
+class DelayedEmbeddingProvider:
+    """Delays every embedding call before handing it to *inner*."""
+
+    def __init__(self, inner: Any, *, delay: float) -> None:
+        self._inner = inner
+        self._delay = delay
+
+    @property
+    def spec(self) -> EmbeddingSpec:
+        spec: EmbeddingSpec = self._inner.spec
+        return spec
+
+    async def embed(self, inputs: Sequence[EmbeddingInput]) -> list[EmbeddingResult]:
+        await asyncio.sleep(self._delay)
+        result: list[EmbeddingResult] = await self._inner.embed(inputs)
+        return result
 
 
 class FailingEmbeddingProvider:

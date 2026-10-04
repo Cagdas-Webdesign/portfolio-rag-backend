@@ -22,6 +22,7 @@ from portfolio_rag.api.error_handlers import (
 )
 from portfolio_rag.api.schemas.chat import ChatRequest, ChatResponse
 from portfolio_rag.api.schemas.errors import ErrorResponse
+from portfolio_rag.rag.conversation import ConversationTurn
 
 router = APIRouter(tags=["Chat"])
 
@@ -61,7 +62,9 @@ router = APIRouter(tags=["Chat"])
             "model": ErrorResponse,
             "description": (
                 "A service this request depends on — the knowledge search or the "
-                "generation provider — could not be reached. Safe to retry."
+                "generation provider — could not be reached, did not deliver a usable "
+                "result, or did not finish within the request's time limit. Nothing "
+                "is published in that case. Safe to retry."
             ),
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -78,11 +81,16 @@ router = APIRouter(tags=["Chat"])
         "still `200`: the answer says so and `citations` is empty. That is the "
         "honest outcome, not an error.\n\n"
         "This endpoint keeps no conversation state — `conversation_id` is "
-        "echoed back and nothing more."
+        "echoed back and nothing more. A client may send the few turns before "
+        "the question in `conversation`; they help to read a follow-up and are "
+        "never treated as a source."
     ),
 )
 async def create_chat_completion(request: ChatRequest, answers: AnswerService) -> ChatResponse:
-    result = await answers.answer(request.message)
+    result = await answers.answer(
+        request.message,
+        [ConversationTurn(role=turn.role, text=turn.content) for turn in request.conversation],
+    )
     return ChatResponse(
         answer=result.answer,
         citations=list(result.citations),

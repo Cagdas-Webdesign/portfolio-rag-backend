@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 
 from portfolio_rag.domain.retrieval import RetrievedChunk
 from portfolio_rag.evaluation.dataset import EvaluationQuestion
+from portfolio_rag.rag.retrieval import RetrievalOutcome
 
 #: The cut-offs hit rate is reported at.
 HIT_RATE_CUTOFFS: tuple[int, ...] = (1, 3, 5)
@@ -58,6 +59,11 @@ class RetrievalOutcomeRecord:
     retrieved: tuple[RetrievedChunk, ...]
     first_relevant_rank: int | None
     leaked_internal: bool
+    outcome: RetrievalOutcome | None = None
+    """The whole retrieval outcome behind :attr:`retrieved`, when the record was
+    produced by a run: what the store returned and what was dropped on the way
+    (below the threshold, unresolved, withheld). Observation only — no metric
+    here reads it."""
 
     @property
     def found_anything(self) -> bool:
@@ -121,12 +127,18 @@ class RetrievalOutcomeRecord:
 
 
 def score_retrieval(
-    question: EvaluationQuestion, retrieved: Sequence[RetrievedChunk]
+    question: EvaluationQuestion,
+    retrieved: Sequence[RetrievedChunk],
+    *,
+    outcome: RetrievalOutcome | None = None,
 ) -> RetrievalOutcomeRecord:
-    """Compare one question's retrieval against its ground truth."""
+    """Compare one question's retrieval against its ground truth.
+
+    *outcome* is kept on the record as it is; scoring uses *retrieved* alone.
+    """
     rank: int | None = None
     for position, item in enumerate(retrieved, start=1):
-        if _is_relevant(question, item):
+        if is_relevant(question, item):
             rank = position
             break
 
@@ -137,10 +149,12 @@ def score_retrieval(
         leaked_internal=any(
             item.chunk.document_metadata.visibility.value != "public" for item in retrieved
         ),
+        outcome=outcome,
     )
 
 
-def _is_relevant(question: EvaluationQuestion, item: RetrievedChunk) -> bool:
+def is_relevant(question: EvaluationQuestion, item: RetrievedChunk) -> bool:
+    """Whether *item* satisfies any of the question's expected sources."""
     return any(
         expected.matches(item.chunk.document_id, item.chunk.heading_path)
         for expected in question.expected_sources

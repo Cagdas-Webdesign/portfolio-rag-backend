@@ -40,8 +40,12 @@ uv run portfolio-rag knowledge embedding <id>  # what would be embedded (--show-
 uv run portfolio-rag knowledge index --dry-run # what indexing would change
 uv run portfolio-rag query retrieve "…"      # what a question finds (--top-k, --min-similarity)
 uv run portfolio-rag query answer "…"        # the whole pipeline (--show-retrieval, --show-context)
-uv run portfolio-rag eval run                # measure retrieval + grounding (--retrieval-only)
+uv run portfolio-rag eval run                # offline: retrieval + grounding on the stand-ins (--retrieval-only)
+uv run portfolio-rag eval run --e2e --tier smoke --output …       # real provider: health check, ~5 questions
+uv run portfolio-rag eval run --e2e --tier acceptance --output …  # real provider: the 24-question release suite, budget-gated
+uv run portfolio-rag eval run --e2e --tier acceptance --preflight-only --output …  # forecast, no calls
 uv run portfolio-rag eval run --generation-delay-seconds 8  # pace a live run inside a rate limit
+uv run portfolio-rag eval validate-acceptance <export>  # is this export a release acceptance? (--development)
 uv run pytest                 # all fast, no network, no credentials
 uv run ruff check .
 uv run ruff format .
@@ -94,8 +98,10 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pyt
    citations, 0008 abuse boundary at the deployment edge
 3. [docs/ROADMAP.md](docs/ROADMAP.md) — six phases, and what is deliberately not being built
 4. [docs/SECURITY.md](docs/SECURITY.md) — which boundaries are structural, and what remains a risk
-5. [AGENTS.md](AGENTS.md) — the rules
-6. [knowledge/README.md](knowledge/README.md) — before touching anything about the document format
+5. [docs/RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md) — what makes a live run a release
+   acceptance: provenance, frozen gates, safety freeze, no rerun until green
+6. [AGENTS.md](AGENTS.md) — the rules
+7. [knowledge/README.md](knowledge/README.md) — before touching anything about the document format
 
 ## The rules that get broken most often
 

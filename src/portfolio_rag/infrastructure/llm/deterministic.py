@@ -59,6 +59,14 @@ class DeterministicLLMProvider:
         payload = {
             "answer": _STUB_ANSWER if labels else _NO_SOURCES_ANSWER,
             "sources": list(labels),
+            # The stub's statement is about the labels it was handed, which is
+            # exactly what the prompt contains: stated when there are any.
+            "support": "stated" if labels else "none",
+            # The pipeline asks a second time whether the cited passages carry
+            # the answer. The stub cannot tell that request from the first, so
+            # one reply satisfies both contracts: each reader takes its field
+            # and ignores the other.
+            "verdict": "supported" if labels else "not_supported",
         }
         return GenerationResponse(
             text=json.dumps(payload, ensure_ascii=False),

@@ -1,0 +1,27 @@
+# Provider smoke for `portfolio-questions.yaml` — question ids only.
+#
+#   uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier smoke ...
+#
+# Not a quality sample: a health check of the provider path before an
+# acceptance run is worth its cost. Five questions, each chosen because a real
+# provider has already misbehaved on it — so a smoke run spends its calls where
+# a problem is most likely to show, and covers the paths that matter on the way:
+#
+#   broad-deployment                multi_source  broad answer; cut off at the limit (10-02), rate limited (preflight 10-02)
+#   ambiguous-frontend-technologies ambiguous     cut off at the limit twice, regeneration included (10-03)
+#   multi-api-backend-evidence      multi_source  regenerated, and a grounding check with no verdict (10-02, 10-03)
+#   section-lead-flow               section       timeout (10-01), regenerated and check without verdict (10-03)
+#   unknown-kubernetes-production   unknown       must be refused; its grounding check gave no verdict (10-02)
+#
+# Selection is by id and the dataset's own order is kept. A smoke run passes or
+# fails on technical health, never on answer quality.
+
+version: 1
+dataset: portfolio-questions.yaml
+
+questions:
+  - broad-deployment
+  - ambiguous-frontend-technologies
+  - multi-api-backend-evidence
+  - section-lead-flow
+  - unknown-kubernetes-production

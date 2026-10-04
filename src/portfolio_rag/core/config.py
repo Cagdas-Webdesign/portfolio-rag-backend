@@ -115,6 +115,16 @@ class Settings(BaseSettings):
     #: Seconds before an outbound provider or store request is abandoned.
     provider_timeout_seconds: float = Field(default=30.0, gt=0)
 
+    #: The longest one chat request may take, end to end: retrieval, every
+    #: generation, the grounding check and every transport retry beneath them.
+    #: When it passes, the request is cancelled and ends as a technical error —
+    #: in the application's own error envelope, before the platform's request
+    #: timeout (recommended 90s on Cloud Run) cuts it off without one.
+    #: **Provisional**: chosen below that timeout, not measured. To be re-set
+    #: from unpaced production latencies; an evaluation's elapsed times include
+    #: pacing waits and must not be used for it.
+    request_deadline_seconds: float = Field(default=60.0, gt=0)
+
     mistral_api_key: SecretStr | None = None
     #: Embedding and generation are separate models, and mixing them up is a
     #: mistake that produces an error only at the far end of a pipeline.
@@ -191,6 +201,28 @@ class Settings(BaseSettings):
         if self.json_logs is not None:
             return self.json_logs
         return self.environment is not Environment.LOCAL
+
+    @field_validator(
+        "mistral_api_key",
+        "cloudflare_account_id",
+        "cloudflare_api_token",
+        "cloudflare_vectorize_index",
+        "edge_shared_secret",
+        "cloudflare_workers_ai_token",
+        mode="before",
+    )
+    @classmethod
+    def _strip_credential(cls, value: object) -> object:
+        """Drop whitespace around a credential or account identifier.
+
+        None of these can contain it, and a secret read from a file or a
+        secret manager often ends in a newline — which an HTTP client refuses
+        to put in a header, so every request fails before it is sent.
+        """
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

@@ -27,17 +27,178 @@ inside one question: nothing is measured twice.
 This is evaluation wiring and nothing else. The server does not have it, cannot be configured into
 it, and its per-request behaviour is unchanged.
 
+### Tiers, budget and the ledger
+
+Workers AI's free allocation is about 10,000 neurons a day, shared with the public chatbot, and one
+full end-to-end run has come close to using all of it. So a run against a real provider is never a
+default (`src/portfolio_rag/evaluation/operations.py`, `budget.py`):
+
+* **Local** — `pytest`, Ruff, mypy, knowledge validation, `eval run` on the stand-ins. Free, as
+  often as needed. Everything provable without a provider is proven here.
+* **Smoke** — `eval run --e2e --tier smoke`: the five questions in
+  `portfolio-questions.provider-smoke.yaml`, each one a provider has already misbehaved on. It
+  answers one question: is the provider path healthy enough today to justify a full run? It fails
+  on an aborted run, an unclassified failure, a refused request, anything published that must not
+  be, or most questions failing — not on answer quality. A regeneration that recovered and a
+  controlled refusal pass; two technical failures among its questions fail it. It is useful after a
+  provider-relevant change or after a run that hit provider failures. It is never required to
+  *learn costs*: the forecast learns from earlier runs of any day, and a missing run today is not a
+  reason for one. A smoke run is held to its own share — forecast above 10 % of the daily budget
+  (the structural bound for five questions is ~2,400) it needs `--allow-yellow`.
+* **Acceptance** — `eval run --e2e --tier acceptance`: the 24 questions of the release-acceptance
+  suite (see [Release acceptance suite](#release-acceptance-suite)), only when asked for by name. A smoke run never starts one, and nothing restarts one: a red run is analysed, not rerun.
+  Whether its export is a **release acceptance** — commit, clean tree, suite version, configuration,
+  frozen gates, one PASS/FAIL verdict — and the one narrow provider-outlier rerun are defined in
+  [docs/RELEASE_ACCEPTANCE.md](../docs/RELEASE_ACCEPTANCE.md); `eval validate-acceptance` checks an
+  export against it.
+
+An end-to-end run against a real provider without `--tier` is refused, and so is the older answering
+pass (`eval run` without `--e2e`) against one — both before anything is built.
+
+**Preflight**, before the first call: the forecast and whether the run may start
+(`--preflight-only` prints it and stops). The forecast's learning base is the *historical cost
+profile* — every earlier `e2e-eval-v3` export in `evaluation/results/`, of any day — kept apart from
+the *ledger*, which is only today's consumption. A run is used only for the same provider, model and
+export format; a different prompt or grounding-check version, response format, prompt budget, output
+limit or retrieval policy — or an export that does not record one — is named in the preflight and
+caps confidence at medium, as does history older than 14 days. Generation and grounding check are
+costed apart: per call and token direction, the larger of the 75th percentile and the mean capped at
+the 90th (a heavy tail is not filtered away, one extreme call does not set the forecast), the
+observed generations per question, a check for every question, plus a margin of 10 % (high
+confidence: ≥ 30 measured calls of each kind, ≥ 95 % usage coverage) or 25 % (medium: ≥ 5 and ≥ 80 %).
+With less comparable measured usage, confidence is **low** and the forecast is the structural upper
+bound — every call at the context budget and the output limit — which a full run does not fit. No
+run is started to change that: the first acceptance-grade measurement has to come from a run that
+was going to happen anyway. Neurons are estimated from the published rates (`budget.COST_PROFILES`,
+the one place they live); a call that reported no usage is counted at the upper bound, never free.
+
+**Cost bands** describe a forecast as a share of the daily budget: TARGET ≤ 40 %, GOOD ≤ 50 %,
+CAUTION ≤ 70 %, EXCESSIVE above. **Zones** decide: GREEN within the target share (50 % for acceptance,
+10 % for smoke) with the minimum reserve (`--minimum-reserve`, default 4,000) intact — start;
+YELLOW above the target share, reserve intact — start only with `--allow-yellow`; RED when the
+reserve would not survive or the run alone would be EXCESSIVE — no start, no override. The reserve
+is the rule and 50 % a target: 5,001 neurons is a deliberate start, not a refusal.
+
+**During the run** a guard stops early, keeps what was measured and marks the run aborted, on: a
+429 (whether a short rate limit or the day's allocation cannot be told apart — no further call is
+made either way), refused credentials, two consecutive provider failures (one is a result), actual
+spend crossing the reserve, or a projection that crosses it. The projection is what was spent plus
+the remaining questions at a cost per question that moves from the forecast's to the run's own:
+the run's *median* question, weighted n / (n + 5) after n questions — one expensive question is
+counted in full but not projected onto the rest — and it may stop a run from the third question on.
+A run forecast at 4,300 that turns out to cost 8,000 is stopped within its first five questions. A
+classified failure such as an answer truncated twice is a result, not a reason to stop. The report
+names where the run was heading (projected neurons, share and band) and whether the guard stopped it.
+
+**The ledger** (`evaluation/results/provider-ledger.jsonl`) records every smoke, acceptance and
+experiment run: date (UTC), run id, tier, complete or aborted, calls, tokens, estimated neurons,
+usage coverage, artifact — and the commit, whether the tree was dirty, the gates the run broke and
+which run it repeated, which is what the acceptance rerun rule reads. Preflight reads today's entries as *known local consumption*. It is not
+Cloudflare's account: chatbot traffic and anything else on the same allocation are invisible to it,
+and the export says `actual_remaining: null` rather than pretend otherwise. Experiments are entered
+as their own tier: they spend the same allocation, never the acceptance budget's share by accident.
+
+Every tiered export carries an `operations` section — tier, forecast and its confidence, zone at
+start, observed tokens and estimated neurons, usage coverage, known daily consumption, estimated
+nominal reserve, status and abort reason — and the summary a short *Budget / Operations* table.
+
 ## What is here
 
 | File | What it is |
 | --- | --- |
 | `questions.yaml` | 24 questions in 8 categories, with hand-checkable ground truth |
 | `corpus/` | 7 neutral fixture documents — 6 public, 1 `internal` |
-| `portfolio-questions.yaml` | 49 questions against the real corpus in `../knowledge/`. Run against the production retrieval path — see [The real corpus](#the-real-corpus) |
+| `portfolio-questions.yaml` | 49 questions against the real corpus in `../knowledge/` — the extended validation suite. Run against the production retrieval path — see [The real corpus](#the-real-corpus) |
+| `portfolio-questions.release-acceptance.yaml` | the 24 ids the acceptance tier asks — see [Release acceptance suite](#release-acceptance-suite) |
+| `portfolio-questions.provider-smoke.yaml`, `portfolio-questions.smoke.yaml` | the ids of the provider smoke and the offline smoke suites |
 
 Ground truth is a **document id plus a section heading**, never a chunk id: chunk ids move when the
 chunking policy changes, and a dataset that breaks on a re-chunk is a dataset that gets deleted
 rather than fixed.
+
+## Release acceptance suite
+
+`portfolio-questions.release-acceptance.yaml` — suite `release-acceptance`, version 1, **24** of
+the 49 questions, ids only. The acceptance tier (`--tier acceptance`) asks exactly these. The whole
+dataset stays the **extended validation** suite (`--suite full`), unchanged.
+
+Chosen for risk coverage per question, from the dataset and from every recorded production run in
+`results/` — no provider was called to choose. The rule: a question the history shows to be hard
+stays in. Removing a retrieval miss, an answered unknown or a reply that was cut off would make the
+suite easier, not smaller. Redundancy was removed instead: questions with the same expected sources,
+the same retrieval path, or no history and no coverage the kept questions lack.
+
+The result covers all 12 knowledge documents, every category with at least two questions, four
+must-refuse questions of four different kinds, and 20 answerable ones — most of them questions a
+visitor would actually ask. A test (`tests/unit/test_release_acceptance_suite.py`) pins the ids, the
+coverage, the historical cases and the unchanged dataset.
+
+### Kept (24)
+
+| Question | Main role | Also covers | Why kept |
+| --- | --- | --- | --- |
+| `direct-wordpress-experience` | normal use: one fact | `wordpress-woocommerce` | the plainest question in its area |
+| `direct-abitur` | normal use: one fact | `education-and-qualifications` (second section) | `not_grounded` on a simple fact (10-02): grounding-sensitive where it should be easy |
+| `direct-contact` | normal use: contact | `job-fit-and-contact`; boundary pair with `unknown-phone-number` | public contact must be answered, private number refused |
+| `paraphrased-component-ui` | retrieval boundary | three sections, two documents | first relevant at rank **5 of top_k 5** in every run — any drift becomes a miss |
+| `paraphrased-premium-plugins` | paraphrase | `wordpress-woocommerce` + `plugin-development` | `not_grounded` once (10-03); the only `plugin-development` coverage |
+| `paraphrased-edge-backend` | grounding-sensitive | `api-backend-databases` (Cloudflare), rank 2 | `not_grounded` twice (10-02, 10-03) |
+| `paraphrased-scroll-animation` | retrieval miss | key term (GSAP) never named | missed in every run |
+| `paraphrased-root-cause` | normal use, prose | `working-style` + `api-backend-databases` | working-style coverage; diagnostic prose answer |
+| `multi-frontend-backend-ai` | multi-source, 5 sections | `professional-profile`, `react-portfolio`, `custom-rag-backend` | `not_grounded` twice (10-02, 10-03); widest answerable multi-source |
+| `multi-marketing-automation-web` | multi-source, non-technical | `social-media-content`, `automation-email-marketing`, `working-style` | the only non-technical multi-source answer |
+| `multi-api-backend-evidence` | multi-source, provider history | `job-fit-and-contact`, `custom-rag-backend` | regenerated; grounding check without a verdict (10-02, 10-03) |
+| `section-prompt-injection` | adversarial wording | `custom-rag-backend` security sections | the question itself carries an instruction-shaped clause |
+| `section-degree-claim` | leading question | `education-and-qualifications` | the corpus contradicts the premise: grounding must not echo it |
+| `section-lead-flow` | structure: three sections of one document | `automation-email-marketing` | timeout (10-01), regenerated, check without verdict (10-03), `not_grounded` (10-03) |
+| `ambiguous-frontend-technologies` | ambiguous, provider history | three documents | cut off at the limit twice (10-03) |
+| `ambiguous-api-frontend` | structure: one heading in three documents | citation must name the right document | heading collision for citations |
+| `unknown-phone-number` | refuse: private data | contact details exist nearby | privacy refusal next to answerable data; answered once (10-01) |
+| `unknown-major-clients` | refuse: plausible business claim | invites invented names | answered once (10-01) |
+| `unknown-kubernetes-production` | refuse: term occurs, negated | "Kubernetes" appears only as not used | answered in five runs, last in the v6 targeted run (10-02) |
+| `unknown-medical-training` | refuse: domain absent | nothing near it | answered twice (10-01) |
+| `broad-deployment` | broad, provider history | Docker, production readiness | cut off at the limit (10-02), rate limited (10-02) |
+| `broad-ai-technologies` | broad, retrieval miss | ElevenLabs, RAG, profile | missed in every run; errors (10-02) |
+| `broad-frontend-backend-in-portfolio` | broad, provider history | React integration + FastAPI | unparseable output (10-02), provider error (10-02) |
+| `broad-project-scope` | broad, deictic ("diesem Projekt") | tech stack, portfolio relevance | missed in every run |
+
+### Removed (25)
+
+None of these was removed for being hard. Five have a history; for each, the kept question that
+carries the same risk is named.
+
+| Question | Why removed | Coverage taken by |
+| --- | --- | --- |
+| `direct-frontend-stack` | the same three expected sections as `ambiguous-frontend-technologies`, near-identical wording | `ambiguous-frontend-technologies` |
+| `direct-languages` | one fact in `professional-profile`, rank 1 in every run, no history | `direct-abitur`, `direct-wordpress-experience` (simple facts); `professional-profile` via `multi-frontend-backend-ai` |
+| `direct-study-location` | the same section as `section-degree-claim`, without its false premise | `section-degree-claim` |
+| `direct-own-plugins` | `plugin-development`, rank 1, no history | `paraphrased-premium-plugins` |
+| `direct-databases` | three documents all asked about elsewhere; rank 1, no history | `paraphrased-edge-backend`, `multi-api-backend-evidence`, `paraphrased-root-cause` |
+| `direct-vector-store` | `custom-rag-backend` tech stack, rank 1, no history | `broad-deployment`, `broad-project-scope` |
+| `direct-social-platforms` | `social-media-content`, rank 1, no history | `multi-marketing-automation-web` |
+| `direct-elevenlabs` | its section is an expected source of `broad-ai-technologies` | `broad-ai-technologies` |
+| `paraphrased-frontend-backend-contract` | API contracts across three documents, rank 1, no history | `ambiguous-api-frontend`, `broad-frontend-backend-in-portfolio` |
+| `paraphrased-requirements` | `working-style`, rank 1, no history | `paraphrased-root-cause`, `multi-marketing-automation-web` |
+| `multi-fullstack-role` | multi-source at rank 3; its documents are covered, and the retrieval-depth risk more strictly | `paraphrased-component-ui` (rank 5), `direct-contact`, `multi-frontend-backend-ai` |
+| `section-http-200-wrong` | three sections of one document compete — the same structure risk | `section-lead-flow` (same structure, plus provider history) |
+| `section-threshold-not-boundary` | RAG-security section, rank 1, no history | `section-prompt-injection` |
+| `section-citation-forge` | RAG-security section, rank 1, no history | `section-prompt-injection`; citation safety via `ambiguous-api-frontend` |
+| `section-no-answer` | asks *about* refusal; refusal itself is tested by four unknowns | the four `unknown-*` questions |
+| `section-backend-as-project` | its section is an expected source of `broad-project-scope` and `multi-api-backend-evidence` | `broad-project-scope` |
+| `section-slack-bot-company` | `automation-email-marketing`; `not_grounded` once (10-03), the same run that refused `section-lead-flow` | `section-lead-flow` |
+| `section-elementor-widgets` | `plugin-development`, rank 1, no history | `paraphrased-premium-plugins` |
+| `section-woocommerce-shop` | `wordpress-woocommerce`, rank 1, no history | `direct-wordpress-experience`, `paraphrased-premium-plugins` |
+| `ambiguous-react-role` | the same three expected sections as `ambiguous-frontend-technologies`; its one error was the run-wide outage of 10-01 | `ambiguous-frontend-technologies` |
+| `unknown-salary` | private personal data — the same kind of refusal | `unknown-phone-number` |
+| `broad-assistant-stack` | the same expected sources as `broad-chatbot-technology`, largely those of `broad-project-scope`; no history | `broad-project-scope`, `broad-deployment` |
+| `broad-chatbot-technology` | the same expected sources as `broad-assistant-stack`; its deictic wording is also in `broad-project-scope` | `broad-project-scope` |
+| `broad-system-flow` | `custom-rag-backend` end to end, rank 2 in every live run (its one unranked entry is the raw retrieval export) | `broad-deployment`, `broad-project-scope` |
+| `broad-mistral-vectorize-roles` | five sections, mostly of one document, rank 2, no history | `broad-deployment`, `broad-ai-technologies` |
+
+**Not covered any more, on purpose.** Three RAG-security sections (`Similarity Threshold`, `Citation
+Security`, `Unknown Questions`) are no longer asked about by name. They describe the backend's own
+mechanisms; the mechanisms themselves are exercised by every kept question and pinned by the local
+test suite. `section-prompt-injection` remains as the one question about them.
 
 ## Read this before quoting a number
 
@@ -146,6 +307,94 @@ result. A threshold filters noise, not topic — the grounding path is still wha
 the corpus does not cover, and it is still the part that must not be weakened. And a measurement is
 valid for the corpus and the model it was taken on: changing either, or re-chunking, invalidates it,
 and the dataset is re-run rather than assumed.
+
+### Replies cut off at the output limit
+
+Every `finish_reason=length` failure in `results/` — three questions across the 2026-10-02 and
+2026-10-03 full runs, the last of them after two generations — carries the same numbers: `output_tokens` 800, `reply_characters` 800,
+`reply_not_json`. 800 is the output limit (`ContextPolicy.output_reserve_tokens`, used for the
+answer and the grounding check alike). Three things follow from the recorded data, and one does not:
+
+* **The budget is not what ran out.** The longest reply any recorded run *published* was 1419
+  characters as the object the model had to write — about 470 tokens by the project's own
+  pessimistic estimate — and replies over 800 characters came back complete under the same
+  800-token limit. So the provider does not cut by characters, and an ordinary answer fits.
+* **A reply of exactly 800 characters in exactly 800 tokens is one character per token**, three
+  times over. Readable JSON prose is several characters per token. These were not long answers cut
+  short; they were replies made of single-character tokens.
+* **A second identical request is not an independent sample.** Same prompt, temperature 0.2: in the
+  2026-10-03 run seven questions needed a second generation, six recovered and one repeated the
+  failure.
+* **What those characters were is not recorded**, because reply text never is. A run of blanks after
+  an opened object — the known failure mode of JSON-constrained decoding — fits every number above,
+  but it is an inference, not an observation. Whether Workers AI applies `response_format` to
+  `@cf/openai/gpt-oss-120b` at all cannot be established from this repository.
+
+Raising the limit was rejected on this evidence: a reply that loops spends whatever it is given.
+
+Since then every run records each provider call, successful or not, under `provider_calls` for its
+question — step, attempt, result, finish reason, reported tokens, elapsed time (as the service saw
+it, pacing waits included — not provider latency), and the reply's size as
+`reply_characters` and `reply_visible_characters` (characters that are not whitespace) — and totals
+them by step under `metrics.provider_calls`. The summary has a *Provider calls* table and lists every
+call that was not usable. A visible count near zero at the limit is a degenerate reply; a visible
+count close to the character count is an answer that was genuinely too long. The two call for
+different fixes, and the next run says which one it was — against the baseline of the calls that
+succeeded, which is what was missing before.
+
+From the same change on, `generation_attempts` of a question that *errored* counts the generations it
+made. Exports written before it report `0` there however many were made; their `error.attempts`
+(requests on the wire) is unaffected.
+
+### Format `e2e-eval-v3`
+
+From 2026-10-03 exports follow the failure policy (`src/portfolio_rag/rag/failure_policy.py`) and
+are format `e2e-eval-v3`. What changed against `v2`, so the two are not compared as if they were the
+same measurement:
+
+* A grounding check that gave **no readable verdict** is a technical error — `pipeline_error`, an
+  availability finding, `503` to a client. In `v2` it was `not_grounded`, counted as an answerable
+  question not answered: a quality finding it never was. A readable `not_supported` is still
+  `not_grounded`.
+* An errored question counts as `pipeline_error` **only**, no longer also as `not_answered`. One
+  root cause, one failure. A retrieval miss on the same question is still reported — that is a
+  separate cause.
+* Failure categories are sharper: `output_truncated` (rejected reply, provider stopped at the
+  limit) and `malformed_response` (no completion) split out of `unparseable_output` and `other`;
+  `other` is now `unclassified`. Every failure names its `failure_step` (`generation` or
+  `grounding_check`) and keeps `retry_after_seconds`.
+* Each failure is placed in one class — safety, availability or quality — listed under
+  `failure_classes` and shown in the summary.
+* A run ended by a defect in this code (not a provider failure) is **aborted**: it stops at that
+  question, `run.complete` is `false`, `run.aborted` names the question and the exception class, the
+  questions measured before it are kept, and the run does not pass.
+
+`v2` files remain readable; their `not_grounded`, `not_answered` and `pipeline_error` counts are not
+comparable with `v3`.
+
+### Provider experiments
+
+`portfolio-rag eval experiment` compares request configurations of the generation provider on fixed
+contexts — for now `response_format=json_object` (as shipped) against `text` (none requested). Each
+question is retrieved once; every variant and repetition sends the same request with only
+`response_format` changed (the export carries each context's SHA-256 to show it). One call is one
+request: no regeneration, no transport retry, the real parser. Every call is recorded like a
+production provider call; no prompt, passage or reply is kept.
+
+```bash
+uv run portfolio-rag eval experiment --dataset evaluation/portfolio-questions.yaml \
+  --question-id broad-deployment --question-id ambiguous-frontend-technologies \
+  --repetitions 3 --max-calls 24 --delay-seconds 8 \
+  --neuron-budget 3500 --input-neurons-per-million 31818 --output-neurons-per-million 68182 \
+  --output evaluation/results/experiment-e1.json
+```
+
+It stops on a rate limit, refused credentials, any provider failure other than a malformed response
+(which is one of the outcomes being counted), `--max-calls`, or before a call that could take the
+estimated spend past `--neuron-budget`. The results are written however it stops. Neurons are an
+*estimate* — reported tokens times the rates given, which come from Cloudflare's price list for the
+model (the values above are gpt-oss-120b's as published); the provider's dashboard is the
+measurement. It calls the configured real provider and is refused on a development stand-in.
 
 ## The categories
 

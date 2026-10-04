@@ -25,8 +25,21 @@ half-built answer.
 | generation        | provider unreachable / 5xx     | 503 GENERATION_UNAVAILABLE    |
 | generation        | malformed or empty body        | 503 GENERATION_UNAVAILABLE    |
 | generation        | reachable, but says nothing    | 200, refusal, no citations    |
+| generation        | cut off at the limit, once     | 200, the second reply         |
+| generation        | cut off at the limit, twice    | 503 GENERATION_UNAVAILABLE    |
 | citations         | unknown or forged labels       | 200, refusal, no citations    |
 | citations         | duplicate labels               | 200, one citation             |
+| grounding check   | answer not carried by its cite | 200, refusal, no citations    |
+| grounding check   | reply that is not a verdict    | 503 GENERATION_UNAVAILABLE    |
+| grounding check   | provider unreachable           | 503 GENERATION_UNAVAILABLE    |
+| provider boundary | adapter raises outside the port| 503 GENERATION_UNAVAILABLE    |
+| request deadline  | passes during a provider call  | 503 GENERATION_UNAVAILABLE    |
+| request deadline  | passes during retrieval        | 503 RETRIEVAL_UNAVAILABLE     |
+
+What each provider failure *category* makes the pipeline do — recovery,
+terminal outcome, gate — is one table in code, `rag.failure_policy`, and is
+proven category by category in `tests/unit/test_failure_policy.py`. This file
+proves what a client sees.
 | retrieval         | nothing above threshold        | 200, refusal, no citations    |
 """
 
@@ -47,14 +60,18 @@ from portfolio_rag.infrastructure.knowledge import InMemoryChunkResolver
 from portfolio_rag.infrastructure.vector_store import InMemoryVectorStore
 from portfolio_rag.main import create_app
 from portfolio_rag.ports.embeddings import EmbeddingResult
+from portfolio_rag.ports.errors import LLMProviderError
 from portfolio_rag.rag.policy import ContextPolicy
 from portfolio_rag.rag.service import GroundedAnswerService
 from tests.doubles import (
+    DelayedEmbeddingProvider,
+    DelayedLLMProvider,
     FailingChunkResolver,
     FailingEmbeddingProvider,
     MiscountingEmbeddingProvider,
     ScriptedLLMProvider,
     ScriptedReply,
+    checked,
     grounded,
 )
 
@@ -269,6 +286,103 @@ def test_a_reply_that_breaks_the_contract_fails_closed(
         )
 
 
+_CUT_OFF = ScriptedReply(raw_text='{"answer": "Confident and', finish_reason="length")
+
+
+def test_a_reply_cut_off_once_is_generated_again_and_answered(rag_settings: Settings):
+    llm = ScriptedLLMProvider(_CUT_OFF, grounded("Yes [S1].", "S1"))
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "Yes [1]."
+    assert len(payload["citations"]) == 1
+    assert "Confident and" not in response.text
+    assert llm.call_count == 2
+
+
+def test_a_reply_cut_off_twice_is_a_generation_outage(rag_settings: Settings):
+    """Fail closed: half an object is never repaired, guessed at or published."""
+    llm = ScriptedLLMProvider(_CUT_OFF)
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="GENERATION_UNAVAILABLE")
+    assert "Confident and" not in response.text
+    assert llm.call_count == 2
+
+
+# --- grounding check: a real citation is not yet a carried claim ----------------
+
+
+def test_an_answer_the_check_does_not_confirm_is_replaced_not_published(rag_settings: Settings):
+    """A real label and a confident answer, and the check says the passage does
+    not carry it: a controlled refusal — a quality finding, not a fault."""
+    llm = ScriptedLLMProvider(
+        grounded("Confident.", "S1"), grounding_check=checked("not_supported")
+    )
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["citations"] == []
+    assert payload["answer"].startswith("I don't have enough information")
+    assert "Confident." not in payload["answer"]
+    assert llm.check_count == 1
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        pytest.param(checked("maybe"), id="unknown verdict"),
+        pytest.param(ScriptedReply(raw_text="It looks fine to me."), id="prose"),
+        pytest.param(ScriptedReply(raw_text=""), id="empty"),
+        pytest.param(ScriptedReply(raw_text='{"verdict": "supp', finish_reason="length"), id="cut"),
+    ],
+)
+def test_a_check_that_gives_no_verdict_is_an_outage_not_a_refusal(
+    rag_settings: Settings, check: ScriptedReply
+):
+    """No verdict says nothing about the passages, so the client is not told the
+    knowledge base lacks an answer: fail closed, as a technical error."""
+    llm = ScriptedLLMProvider(grounded("Confident.", "S1"), grounding_check=check)
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="GENERATION_UNAVAILABLE")
+    assert "Confident." not in response.text
+    assert llm.check_count == 1
+
+
+def test_an_unreachable_grounding_check_is_a_generation_outage(rag_settings: Settings):
+    """No verdict is not a verdict: the answer that existed is not sent."""
+    llm = ScriptedLLMProvider(
+        grounded("Confident.", "S1"),
+        grounding_check=ScriptedReply(error=LLMProviderError("provider unreachable")),
+    )
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="GENERATION_UNAVAILABLE")
+    assert "Confident." not in response.text
+
+
+def test_a_confirmed_answer_is_the_same_response_it_always_was(rag_settings: Settings):
+    llm = ScriptedLLMProvider(grounded("Yes [S1].", "S1"))
+    with app_client(rag_settings, _llm=llm) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert response.status_code == 200
+    payload = response.json()
+    # Nothing about the check is part of the public response.
+    assert not {"grounding_check", "verdict", "support"} & set(payload)
+    assert payload["answer"] == "Yes [1]."
+    assert len(payload["citations"]) == 1
+    assert llm.check_count == 1
+
+
 # --- citations: not failures, but not answers either -------------------------
 
 
@@ -298,11 +412,19 @@ def test_an_answer_with_no_verifiable_source_is_replaced_not_published(
     "reply",
     [
         pytest.param(grounded(""), id="empty answer"),
-        pytest.param(ScriptedReply(raw_text='{"answer": "   ", "sources": []}'), id="blank answer"),
-        pytest.param(ScriptedReply(raw_text='{"sources": ["S1"]}'), id="no answer field"),
-        pytest.param(ScriptedReply(raw_text='{"answer": null}'), id="null answer"),
         pytest.param(
-            ScriptedReply(raw_text='{"answer": "", "sources": ["S1"]}'), id="blank + label"
+            ScriptedReply(raw_text='{"answer": "   ", "sources": [], "support": "stated"}'),
+            id="blank answer",
+        ),
+        pytest.param(
+            ScriptedReply(raw_text='{"sources": ["S1"], "support": "stated"}'), id="no answer field"
+        ),
+        pytest.param(
+            ScriptedReply(raw_text='{"answer": null, "support": "stated"}'), id="null answer"
+        ),
+        pytest.param(
+            ScriptedReply(raw_text='{"answer": "", "sources": ["S1"], "support": "stated"}'),
+            id="blank + label",
         ),
     ],
 )
@@ -355,3 +477,41 @@ def test_nothing_above_the_threshold_is_a_successful_refusal(client: TestClient)
 
     assert response.status_code == 200
     assert response.json()["citations"] == []
+
+
+# --- the provider boundary and the request deadline ------------------------------
+
+
+class _BrokenAdapter:
+    """An adapter that breaks its port contract: raises something undefined."""
+
+    model = "broken-adapter"
+
+    async def generate(self, request: Any) -> Any:
+        raise KeyError("choices")
+
+
+def test_an_adapter_raising_outside_the_port_contract_is_an_outage(rag_settings: Settings):
+    with app_client(rag_settings, _llm=_BrokenAdapter()) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="GENERATION_UNAVAILABLE")
+    assert "KeyError" not in response.text and "choices" not in response.text
+
+
+def test_a_deadline_during_generation_is_an_outage(rag_settings: Settings):
+    llm = DelayedLLMProvider(ScriptedLLMProvider(grounded("Late.", "S1")), delays=(5.0,))
+    with app_client(rag_settings, _llm=llm, _deadline_seconds=0.05) as (client, _):
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="GENERATION_UNAVAILABLE")
+    assert llm.completed == 0
+
+
+def test_a_deadline_during_retrieval_is_a_retrieval_outage(rag_settings: Settings):
+    with app_client(rag_settings, _deadline_seconds=0.05) as (client, app):
+        embeddings = app.state.answer_service._retrieval._embeddings
+        break_retrieval(app, _embeddings=DelayedEmbeddingProvider(embeddings, delay=5.0))
+        response = client.post(CHAT_URL, json=QUESTION)
+
+    assert_clean_failure(response, status=503, code="RETRIEVAL_UNAVAILABLE")

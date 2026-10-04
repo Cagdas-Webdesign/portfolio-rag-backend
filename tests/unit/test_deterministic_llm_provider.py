@@ -49,7 +49,13 @@ def test_it_cites_every_label_it_was_given_in_order():
         )
     )
 
-    assert json.loads(response.text)["sources"] == ["S1", "S2", "S3"]
+    payload = json.loads(response.text)
+    assert payload["sources"] == ["S1", "S2", "S3"]
+    # The required verdict: without it the pipeline would refuse the stub.
+    assert payload["support"] == "stated"
+    # And the grounding check's, in the same reply: the stub cannot tell the
+    # two requests apart, and each reader ignores the other's field.
+    assert payload["verdict"] == "supported"
 
 
 def test_it_never_invents_a_label():
@@ -102,3 +108,4 @@ def test_a_prompt_without_passages_is_handled_without_pretending():
     payload = json.loads(response.text)
     assert payload["sources"] == []
     assert "no knowledge sources" in payload["answer"].lower()
+    assert payload["support"] == "none"

@@ -157,6 +157,9 @@ docker run -d -p 8000:8000 \
   portfolio-rag-assistant
 ```
 
+To tie an image to a release-acceptance run, build it from the same clean commit and name it by that
+commit — see [RELEASE_ACCEPTANCE.md](RELEASE_ACCEPTANCE.md#linking-a-build-to-the-commit).
+
 The image carries no secrets and runs as a non-root user. The corpus ships inside it, because the
 service reads `knowledge/` at startup to resolve retrieved passages back to their text.
 
@@ -184,6 +187,7 @@ the process does not start. A production deployment cannot silently serve placeh
 | `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` | optional | default 0.25; production runs at that value, evaluated in step 4 |
 | `PORTFOLIO_RAG_RETRIEVAL_TOP_K` | optional | default 5 |
 | `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` | optional | default 30 |
+| `PORTFOLIO_RAG_REQUEST_DEADLINE_SECONDS` | optional | default 60, provisional; keep below the Cloud Run timeout |
 | `PORTFOLIO_RAG_KNOWLEDGE_ROOT` | optional | default `knowledge` |
 | `PORTFOLIO_RAG_LOG_LEVEL` | optional | default `INFO` |
 
@@ -269,22 +273,34 @@ the repository.
 Cloud Run's default request timeout is **300 seconds**. Nothing in this repository sets it — it is
 service configuration, set on the Cloud Run service itself.
 
-For one RAG request that is far too long. The application's own bound is
-`PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS`, default **30s**, applied per provider call — and a single
-chat request makes at most two of them in sequence (one embedding, one generation), plus a Vectorize
-query. The realistic worst case is therefore on the order of 60–70 seconds, and the common case is
-two or three.
+**What one chat request can cost in time.** One query embedding, one Vectorize query, and at most
+**three calls to the generation provider**: the answer, one regeneration when the failure policy
+allows it (`rag/failure_policy.py`), and the grounding check. Each provider call may be retried by
+its adapter beneath the port — up to three requests on the wire, `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS`
+(default 30s) each. Unbounded, that adds up to several minutes; an earlier version of this section
+counted two calls and 60–70 seconds, which stopped being true when the grounding check and the
+regeneration were added.
 
-**Recommended: 90 seconds.** It leaves headroom above the worst case the application can produce,
-and it stops a stuck request from occupying a concurrency slot for five minutes — which matters
-precisely because `--concurrency=8` and `--max-instances=3` mean there are only 24 of them.
+**The application's own bound: `PORTFOLIO_RAG_REQUEST_DEADLINE_SECONDS`, default 60s.** Every step
+of one request — retrieval, each generation, the grounding check and every transport retry beneath
+them — spends from that one deadline. When it passes, the step under way is cancelled, no further
+provider call is started, and the client receives a `503` in the application's error envelope
+(`GENERATION_UNAVAILABLE`, or `RETRIEVAL_UNAVAILABLE` if it passed during retrieval). The value is
+**provisional**: chosen to sit below the platform timeout, not measured. Re-set it from unpaced
+production latencies (the `provider call` log lines record each call's elapsed time); an evaluation
+run's elapsed times include pacing waits and must not be used for it.
+
+**Recommended Cloud Run timeout: 90 seconds** — above the application deadline, so that the
+application, not the platform, ends a slow request and answers it with its own envelope, and short
+enough that a stuck request does not hold one of the 24 concurrency slots (`--concurrency=8`,
+`--max-instances=3`) for five minutes.
 
 ```bash
 gcloud run services update portfolio-rag --timeout=90
 ```
 
 This is a recommendation, not a change: the value belongs to the Cloud Run service, and nothing in
-this repository sets or reads it.
+this repository sets or reads it. Keep it above `PORTFOLIO_RAG_REQUEST_DEADLINE_SECONDS`.
 
 ## 7. Verify
 

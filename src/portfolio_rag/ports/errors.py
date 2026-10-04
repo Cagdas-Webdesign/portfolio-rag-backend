@@ -15,6 +15,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import ClassVar
 
+from portfolio_rag.ports.llm import TokenUsage
+
 
 class PortErrorCode(StrEnum):
     """Stable, machine-readable reasons an adapter failed."""
@@ -67,15 +69,64 @@ class EmbeddingProviderError(PortError):
     code = PortErrorCode.EMBEDDING_PROVIDER_ERROR
 
 
+class ProviderFailureKind(StrEnum):
+    """What a generation adapter ran into. Data on the error, not a class to catch.
+
+    The reasoning at the top of this module still holds: a caller does the same
+    thing whatever the cause, so there is one error class. But "the provider
+    failed" is not enough to act on afterwards — a timeout, a rate limit and a
+    refused request need three different fixes — and reading the cause back out
+    of a message string is how a diagnosis starts depending on wording.
+    """
+
+    TIMEOUT = "timeout"
+    UNREACHABLE = "unreachable"
+    RATE_LIMITED = "rate_limited"
+    HTTP_STATUS = "http_status"
+    MALFORMED_RESPONSE = "malformed_response"
+    """The provider answered, and the body was not a completion."""
+
+    UNSPECIFIED = "unspecified"
+
+
 class LLMProviderError(PortError):
     """A generation provider could not deliver a usable completion.
 
     "Usable" stops at the transport: a provider that answered with text has
     succeeded here, even if the text turns out not to satisfy the answer
     contract. Judging the content is the query side's job.
+
+    ``kind``, ``status_code`` and ``attempts`` are diagnostics. They say what
+    happened on the wire and how often it was tried; like the message, they
+    never carry a credential, a header or a response body.
+
+    ``finish_reason`` and ``usage`` are what a provider reported about a
+    response that was nevertheless not a completion — set by an adapter only
+    when the response carried them, ``None`` otherwise. Metadata, never text:
+    a malformed response says why it ended and what it cost, or nothing.
     """
 
     code = PortErrorCode.LLM_PROVIDER_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        retry_after_seconds: float | None = None,
+        kind: ProviderFailureKind = ProviderFailureKind.UNSPECIFIED,
+        status_code: int | None = None,
+        finish_reason: str | None = None,
+        usage: TokenUsage | None = None,
+    ) -> None:
+        super().__init__(message, retryable=retryable, retry_after_seconds=retry_after_seconds)
+        self.kind = kind
+        self.status_code = status_code
+        self.finish_reason = finish_reason
+        self.usage = usage
+        #: Requests made before this error was given up on. Whoever retried
+        #: writes it; an error nobody retried was tried once.
+        self.attempts = 1
 
 
 class VectorStoreError(PortError):

@@ -337,6 +337,7 @@ def build_query_components(
             retrieval=retrieval,
             llm=llm,
             context_policy=ContextPolicy(),
+            deadline_seconds=settings.request_deadline_seconds,
         ),
         chunks=chunks,
         indexes_on_start=settings.vector_store is VectorStoreName.MEMORY,

@@ -1,0 +1,804 @@
+{
+  "format": "e2e-eval-v3",
+  "run": {
+    "run_id": "3852c38502db43638d0c624c5df79c02",
+    "generated_at": "2026-10-04T10:27:33+00:00",
+    "project_version": "1.1.0",
+    "git_revision": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "git_dirty": true,
+    "git_dirty_excludes": [
+      "evaluation/results"
+    ],
+    "git_tag": "v1.0.1",
+    "release_source_identity": "ce20333c5d72b7742057011ff972abf48efffc1ca380e0606dcf2e51cb99353d",
+    "dataset": {
+      "path": "evaluation/portfolio-questions.yaml",
+      "sha256": "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280",
+      "version": 1,
+      "corpus": "../knowledge",
+      "question_count": 49
+    },
+    "suite": "full",
+    "suite_version": 1,
+    "suite_sha256": "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280",
+    "suite_path": "evaluation/portfolio-questions.yaml",
+    "question_count": 3,
+    "embedding": {
+      "provider": "mistral",
+      "model": "mistral-embed",
+      "dimensions": 1024,
+      "representation_version": "embedding-text-v1",
+      "identity": "mistral:mistral-embed:1024:embedding-text-v1"
+    },
+    "query_representation_version": "query-text-v1",
+    "vector_store": "memory",
+    "retrieval_policy": {
+      "top_k": 5,
+      "min_similarity": 0.25,
+      "visibility": "public"
+    },
+    "retrieval_delay_seconds": 0.0,
+    "corpus": {
+      "path": "../knowledge",
+      "documents": 12,
+      "chunks": 151,
+      "sha256": "5a180eb597190008689558b360c3de291090c2a50fb6703be75c148a106a3ec8"
+    },
+    "generation": {
+      "provider": "cloudflare_workers_ai",
+      "model": "@cf/openai/gpt-oss-120b",
+      "prompt_version": "grounded-answer-v6",
+      "grounding_check_version": "grounding-check-v1",
+      "response_format": "json_object",
+      "grounding_check_response_format": "json_object",
+      "max_prompt_tokens": 6000,
+      "output_reserve_tokens": 800,
+      "max_output_tokens": 800,
+      "generation_attempt_limit": 2,
+      "transport_attempts": null,
+      "delay_seconds": 0.0
+    },
+    "tier": "smoke",
+    "rerun_of": null,
+    "notes": [],
+    "selected_question_ids": [
+      "direct-contact",
+      "section-lead-flow",
+      "unknown-kubernetes-production"
+    ],
+    "complete": true,
+    "aborted": null
+  },
+  "operations": {
+    "tier": "smoke",
+    "questions": 3,
+    "provider": "cloudflare_workers_ai",
+    "model": "@cf/openai/gpt-oss-120b",
+    "cost_profile": "https://developers.cloudflare.com/workers-ai/platform/pricing/ (2026-10-03)",
+    "forecast": {
+      "questions": 3,
+      "generation_calls": 3.6,
+      "grounding_calls": 3.0,
+      "regeneration_calls": 0.6,
+      "input_tokens": null,
+      "output_tokens": null,
+      "neurons": 1452.0,
+      "per_question_neurons": 484.0,
+      "confidence": "low",
+      "method": "structural upper bound: too little comparable measured usage; every call at the context budget and output limit",
+      "usage_coverage": 0.4,
+      "generation_neurons": 792.0,
+      "grounding_neurons": 660.0,
+      "profile_sources": 3,
+      "profile_age_days": 0,
+      "compatibility": []
+    },
+    "max_port_calls": 9,
+    "daily_budget": 10000.0,
+    "minimum_reserve": 4000.0,
+    "target_share": 0.1,
+    "forecast_share": 0.145,
+    "cost_band": "target",
+    "known_daily_before": 766.2,
+    "estimated_reserve_after": 7781.8,
+    "actual_remaining": null,
+    "zone": "yellow",
+    "confirmation_required": true,
+    "blockers": [],
+    "warnings": [
+      "forecast confidence is low: no comparable measured usage in the history, so the forecast is the structural upper bound",
+      "this smoke run is forecast at 1,452 neurons (15% of the daily budget): operationally expensive for a health check, above its 10%"
+    ],
+    "status": "complete",
+    "abort_reason": null,
+    "observed": {
+      "calls": 6,
+      "input_tokens": 5948,
+      "output_tokens": 1922,
+      "usage_coverage": 1.0,
+      "estimated_neurons": 320.3,
+      "unreported_calls": 0
+    },
+    "known_daily_after": 1086.5,
+    "nominal_reserve_after": 8913.5,
+    "guard": {
+      "status": "target",
+      "projected_final_neurons": 320.3,
+      "projected_final_share": 0.032,
+      "projected_band": "target"
+    },
+    "smoke": {
+      "passed": true,
+      "reasons": []
+    }
+  },
+  "passed": true,
+  "gates": {
+    "no_pipeline_errors": true,
+    "citations_verified": true,
+    "unanswerable_refused": true,
+    "nothing_internal_published": true
+  },
+  "failure_classes": {
+    "retrieval_miss": "quality",
+    "not_answered": "quality",
+    "answered_unknown": "safety",
+    "citation_on_refusal": "safety",
+    "pipeline_error": "availability",
+    "empty_answer": "availability",
+    "answered_without_citation": "safety",
+    "unverified_citation": "safety",
+    "invented_source_label": "safety",
+    "dangling_citation_mark": "safety",
+    "internal_label_leak": "safety",
+    "internal_passage_retrieved": "safety"
+  },
+  "metrics": {
+    "retrieval": {
+      "answerable": 2,
+      "hit_rates": {
+        "hit@1": {
+          "correct": 2,
+          "total": 2
+        },
+        "hit@3": {
+          "correct": 2,
+          "total": 2
+        },
+        "hit@5": {
+          "correct": 2,
+          "total": 2
+        }
+      },
+      "mean_reciprocal_rank": 1.0,
+      "threshold_rejections": {
+        "unknown": {
+          "rejected": 0,
+          "total": 1
+        }
+      },
+      "internal_leaks": 0,
+      "failures": [],
+      "observed": {
+        "correct": 3,
+        "total": 3
+      },
+      "not_observed": []
+    },
+    "availability": {
+      "completed": {
+        "correct": 3,
+        "total": 3
+      },
+      "errors_by_category": {}
+    },
+    "answers": {
+      "outcomes": {
+        "answered": 2,
+        "no_knowledge": 0,
+        "not_grounded": 1,
+        "error": 0
+      },
+      "answerable_answered": {
+        "correct": 2,
+        "total": 2
+      },
+      "answered_citing_expected_source": {
+        "correct": 2,
+        "total": 2
+      },
+      "answered_without_expected_source": []
+    },
+    "citations": {
+      "published": 5,
+      "validity": {
+        "correct": 5,
+        "total": 5
+      },
+      "invented_source_labels": 0,
+      "answerable_without_citation": []
+    },
+    "refusals": {
+      "controlled_refusals": {
+        "correct": 1,
+        "total": 1
+      },
+      "not_refused": []
+    },
+    "robustness": {
+      "pipeline_errors": 0,
+      "empty_answers": 0,
+      "internal_label_leaks": 0,
+      "internal_passages_retrieved": 0,
+      "unresolved_matches": 0,
+      "withheld_matches": 0
+    },
+    "latency": {
+      "median_seconds": 6.623,
+      "max_seconds": 15.736
+    },
+    "provider_calls": {
+      "total": {
+        "calls": 6,
+        "regenerations": 0,
+        "results": {
+          "parsed": 6,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 6,
+        "input_tokens": 5948,
+        "output_tokens": 1922,
+        "elapsed_seconds": {
+          "median": 3.831,
+          "max": 9.814
+        },
+        "finish_reasons": {
+          "stop": 6
+        }
+      },
+      "generation": {
+        "calls": 3,
+        "regenerations": 0,
+        "results": {
+          "parsed": 3,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 3,
+        "input_tokens": 3764,
+        "output_tokens": 1043,
+        "elapsed_seconds": {
+          "median": 4.843,
+          "max": 9.814
+        },
+        "finish_reasons": {
+          "stop": 3
+        }
+      },
+      "grounding_check": {
+        "calls": 3,
+        "regenerations": 0,
+        "results": {
+          "parsed": 3,
+          "unusable_reply": 0,
+          "provider_error": 0
+        },
+        "usage_reported": 3,
+        "input_tokens": 2184,
+        "output_tokens": 879,
+        "elapsed_seconds": {
+          "median": 2.818,
+          "max": 5.403
+        },
+        "finish_reasons": {
+          "stop": 3
+        }
+      }
+    }
+  },
+  "failures": {},
+  "questions": [
+    {
+      "id": "direct-contact",
+      "category": "direct",
+      "question": "Wie kann man Çağdaş kontaktieren?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "job-fit-and-contact",
+          "section": "Kontakt"
+        },
+        {
+          "document": "job-fit-and-contact",
+          "section": "Kein Kontaktformular erforderlich"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "job-fit-and-contact--0003",
+          "document_id": "job-fit-and-contact",
+          "section": "Kontakt",
+          "heading_path": [
+            "Job Fit & Contact",
+            "Kontakt"
+          ],
+          "similarity": 0.8497956347277335,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "working-style--0010",
+          "document_id": "working-style",
+          "section": "Verbindung mit Marketing und Content",
+          "heading_path": [
+            "Working Style",
+            "Verbindung mit Marketing und Content"
+          ],
+          "similarity": 0.8150723508689104,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "job-fit-and-contact--0000",
+          "document_id": "job-fit-and-contact",
+          "section": "Job Fit & Contact",
+          "heading_path": [
+            "Job Fit & Contact"
+          ],
+          "similarity": 0.8119268639011827,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "professional-profile--0005",
+          "document_id": "professional-profile",
+          "section": "Marketing and Digital Communication",
+          "heading_path": [
+            "Professional Profile",
+            "Marketing and Digital Communication"
+          ],
+          "similarity": 0.8015237713886831,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "social-media-content--0012",
+          "document_id": "social-media-content",
+          "section": "Positionierung",
+          "heading_path": [
+            "Social Media & Content",
+            "Positionierung"
+          ],
+          "similarity": 0.7997854515896968,
+          "relevant": false
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "answered",
+      "error_code": null,
+      "error": null,
+      "answer": "Man kann Çağdaş per E‑Mail über die auf seiner Portfolio‑Seite angegebene Adresse kontaktieren; sein GitHub‑Profil ist ebenfalls über das Portfolio erreichbar.",
+      "controlled_refusal": false,
+      "support": "stated",
+      "grounding_check": "supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S1"
+        ],
+        "published": [
+          {
+            "document_id": "job-fit-and-contact",
+            "section": "Kontakt"
+          }
+        ],
+        "verified": 1,
+        "cites_expected_source": true,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 4.8437,
+      "generation_attempts": 1,
+      "provider_calls": [
+        {
+          "call_type": "generation",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 4.8435,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1083,
+          "output_tokens": 218,
+          "reply_characters": 213,
+          "reply_visible_characters": 188
+        },
+        {
+          "call_type": "grounding_check",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 1.5593,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 548,
+          "output_tokens": 164,
+          "reply_characters": 24,
+          "reply_visible_characters": 23
+        }
+      ],
+      "grounding_check_seconds": 1.5595,
+      "duration_seconds": 6.6235,
+      "failures": []
+    },
+    {
+      "id": "section-lead-flow",
+      "category": "section",
+      "question": "Wie kann ein Lead von einer Landingpage bis zu HubSpot, Slack und E-Mail-Automation weiterverarbeitet werden?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "automation-email-marketing",
+          "section": "End-to-End-System"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "automation-email-marketing--0004",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot zu Automation zu Slack"
+          ],
+          "similarity": 0.9091355652631234,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "automation-email-marketing--0003",
+          "document_id": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Landingpage zu HubSpot"
+          ],
+          "similarity": 0.8883168965324395,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0007",
+          "document_id": "automation-email-marketing",
+          "section": "Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Slack"
+          ],
+          "similarity": 0.8819914983951815,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0015",
+          "document_id": "automation-email-marketing",
+          "section": "End-to-End-System",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "End-to-End-System"
+          ],
+          "similarity": 0.8508400867400379,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "automation-email-marketing--0002",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot"
+          ],
+          "similarity": 0.8504687372596332,
+          "relevant": false
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "answered",
+      "error_code": null,
+      "error": null,
+      "answer": "Der Besucher füllt auf der Landingpage ein Kontaktformular aus, die Eingaben werden validiert und per API/Webhook an HubSpot übermittelt. Dort wird ein Lead/Contact angelegt oder aktualisiert und ein definierter Workflow/Automation ausgelöst. Dieser Workflow kann automatisch eine Slack‑Benachrichtigung an das zuständige Team senden und anschließend eine E‑Mail‑Sequenz starten, gefolgt von weiteren Follow‑up‑Prozessen.",
+      "controlled_refusal": false,
+      "support": "stated",
+      "grounding_check": "supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S2",
+          "S1",
+          "S3",
+          "S4"
+        ],
+        "published": [
+          {
+            "document_id": "automation-email-marketing",
+            "section": "Landingpage zu HubSpot"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "HubSpot zu Automation zu Slack"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "Slack"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "End-to-End-System"
+          }
+        ],
+        "verified": 4,
+        "cites_expected_source": true,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 9.8139,
+      "generation_attempts": 1,
+      "provider_calls": [
+        {
+          "call_type": "generation",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 9.8136,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1342,
+          "output_tokens": 522,
+          "reply_characters": 501,
+          "reply_visible_characters": 435
+        },
+        {
+          "call_type": "grounding_check",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 5.4026,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1037,
+          "output_tokens": 411,
+          "reply_characters": 24,
+          "reply_visible_characters": 23
+        }
+      ],
+      "grounding_check_seconds": 5.4028,
+      "duration_seconds": 15.7361,
+      "failures": []
+    },
+    {
+      "id": "unknown-kubernetes-production",
+      "category": "unknown",
+      "question": "Welche Kubernetes-Produktionssysteme hat er betrieben?",
+      "expects_an_answer": false,
+      "expected_sources": [],
+      "first_relevant_rank": null,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "custom-rag-backend--0022",
+          "document_id": "custom-rag-backend",
+          "section": "Docker und Production Readiness",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Docker und Production Readiness"
+          ],
+          "similarity": 0.8224362032633765,
+          "relevant": false
+        },
+        {
+          "rank": 2,
+          "chunk_id": "api-backend-databases--0007",
+          "document_id": "api-backend-databases",
+          "section": "Skalierbarkeit durch Struktur",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Skalierbarkeit durch Struktur"
+          ],
+          "similarity": 0.787182188296572,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "chunk_id": "custom-rag-backend--0023",
+          "document_id": "custom-rag-backend",
+          "section": "Bewusste Grenzen",
+          "heading_path": [
+            "Custom RAG Backend",
+            "Bewusste Grenzen"
+          ],
+          "similarity": 0.7851964327145456,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "api-backend-databases--0012",
+          "document_id": "api-backend-databases",
+          "section": "Docker",
+          "heading_path": [
+            "API, Backend & Databases",
+            "Docker"
+          ],
+          "similarity": 0.782260914631546,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "chunk_id": "working-style--0005",
+          "document_id": "working-style",
+          "section": "Systemdenken",
+          "heading_path": [
+            "Working Style",
+            "Systemdenken"
+          ],
+          "similarity": 0.7748094874391134,
+          "relevant": false
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "not_grounded",
+      "error_code": null,
+      "error": null,
+      "answer": "Dazu habe ich in der verfügbaren Wissensbasis nicht genug Informationen.",
+      "controlled_refusal": true,
+      "support": "stated",
+      "grounding_check": "not_supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S3"
+        ],
+        "published": [],
+        "verified": 0,
+        "cites_expected_source": false,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 2.6639,
+      "generation_attempts": 1,
+      "provider_calls": [
+        {
+          "call_type": "generation",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 2.6638,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 1339,
+          "output_tokens": 303,
+          "reply_characters": 115,
+          "reply_visible_characters": 98
+        },
+        {
+          "call_type": "grounding_check",
+          "attempt": 1,
+          "regeneration": false,
+          "model": "@cf/openai/gpt-oss-120b",
+          "response_format": "json_object",
+          "elapsed_seconds": 2.8178,
+          "result": "parsed",
+          "failure_category": null,
+          "failure_detail": null,
+          "finish_reason": "stop",
+          "input_tokens": 599,
+          "output_tokens": 304,
+          "reply_characters": 28,
+          "reply_visible_characters": 27
+        }
+      ],
+      "grounding_check_seconds": 2.818,
+      "duration_seconds": 6.0279,
+      "failures": []
+    }
+  ],
+  "release_acceptance": {
+    "protocol": "release-acceptance-v1",
+    "verdict": "FAIL",
+    "conditions": {
+      "acceptance_tier": false,
+      "whole_suite": false,
+      "run_complete": true,
+      "run_not_aborted": true,
+      "every_question_recorded": true,
+      "provenance_complete": false,
+      "clean_tree": false,
+      "gates_pass": true,
+      "no_internal_leaks": true
+    },
+    "reasons": [
+      "not an acceptance-tier run",
+      "the run was narrowed to selected questions",
+      "provenance is incomplete",
+      "the working tree was not clean (or its state is unknown)",
+      "missing provenance: git_tag v1.0.1 (does not match project_version 1.1.0)"
+    ],
+    "gates": {
+      "no_pipeline_errors": "PASS",
+      "citations_verified": "PASS",
+      "unanswerable_refused": "PASS",
+      "nothing_internal_published": "PASS",
+      "internal_leaks": 0
+    },
+    "commit": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "release_source_identity": "ce20333c5d72b7742057011ff972abf48efffc1ca380e0606dcf2e51cb99353d",
+    "project_version": "1.1.0",
+    "git_dirty": true,
+    "suite": "full",
+    "suite_version": 1,
+    "question_count": 3,
+    "rerun_of": null,
+    "scope": {
+      "tested": "source_commit",
+      "deployed_image_tested": false,
+      "statement": "The run executed the recorded commit's source in a local process against the configured providers and vector store. It did not exercise a container image or a deployment. An image is covered by this result only if it was built from the recorded commit."
+    },
+    "safety_invariants": [
+      "citation_validation",
+      "controlled_refusal",
+      "conversation_is_not_evidence",
+      "fail_closed_on_technical_failure",
+      "grounding_validation",
+      "public_only_retrieval",
+      "recovery_passes_safety_again",
+      "strict_generation_parser",
+      "telemetry_stays_internal"
+    ]
+  }
+}

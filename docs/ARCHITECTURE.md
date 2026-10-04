@@ -73,7 +73,9 @@ api ──▶ application ──▶ domain ◀── ports ◀── infrastruct
 `evaluation` is the one module that sits across the corpus/query split rather than on one side of
 it: it drives `rag` and borrows `ingestion`'s strict YAML loader for its dataset file, because a
 second YAML loader is how a non-safe one eventually gets used. It is reached from the CLI only —
-nothing in `api` or `main` imports it, and no request path can.
+nothing in `api` or `main` imports it, and no request path can. `evaluation/acceptance.py` judges a
+finished end-to-end export as a release acceptance — from the JSON alone, so the CLI writing the
+verdict and the validator re-checking it apply one rule (see [RELEASE_ACCEPTANCE.md](RELEASE_ACCEPTANCE.md)).
 
 **Pacing lives here, not in an adapter.** A dataset run is a burst of generations, which is what a
 rate-limited account refuses first; a live request is one generation with somebody waiting for it.
@@ -138,6 +140,8 @@ What happens to a question, end to end.
    → chunk resolution                ✅ implemented   (ids → real corpus text)
    → [nothing found] ────────────────────────────────▶ honest answer, no provider call
    → context building                ✅ implemented   (bounded, labelled S1…Sn, deterministic)
+   → earlier turns (optional)        ✅ implemented   (rag/conversation.py — bounded, prompt only,
+                                                       never embedded, never evidence or a citation)
    → grounded prompt                 ✅ implemented   (`grounded-answer-v3`, roles separated)
    → generation                      ✅ implemented   (LLMProvider port)
    → answer contract parsing         ✅ implemented   (structured JSON, not regex)
@@ -436,8 +440,8 @@ rebuilt from Markdown in git. That property is worth protecting: it is what keep
 swappable.
 
 **There is no relational store, and none is planned.** A `ConversationStore` would exist to hold
-conversation state, and this assistant deliberately keeps none: every question is answered on its
-own, from the corpus. `DocumentStore` stays undefined for the same reason it always has — no caller.
+conversation state, and this assistant deliberately keeps none: every question is answered from the
+corpus, and the few earlier turns a client may send with it are a request field, not stored state. `DocumentStore` stays undefined for the same reason it always has — no caller.
 A port invented before its first caller usually has to be changed by that caller anyway.
 
 ## 6. Cross-cutting concerns
@@ -473,13 +477,46 @@ a client-facing error may never do. Nothing routes an ingestion error to an HTTP
 a well-formed one, generated otherwise, and validated against a strict pattern before it is allowed
 anywhere near a log line. Logs are structured (JSON outside local development) and carry the id
 automatically via a context variable, so nothing has to thread it through function signatures.
+An evaluation run binds one run id to the same variable, so its log lines and its export name the
+same run.
+
+Every call to the generation provider — each generation attempt and each grounding check, successful
+or not — leaves one `ProviderCallRecord` (`rag/telemetry.py`): step, attempt, model, requested
+response format, service-observed elapsed time (transport retries and evaluation pacing included —
+not provider latency), result (`parsed` / `unusable_reply` / `provider_error`), the failure's
+category and detail, the provider's finish reason and token usage as reported (`null` when not
+reported, never estimated), and the reply's size in characters and in non-whitespace characters. It
+is built in `rag/service.py`, the only place that calls the provider; it is logged as one
+`provider call` line, carried on the answer (and on a `GenerationUnavailableError`), and exported
+per question and in aggregate by the end-to-end evaluation. It records and decides nothing: no
+routing, retry or refusal reads it.
+
+**Failure policy.** Every way a call to the generation provider can fail is one
+`GenerationFailureCategory`, and `rag/failure_policy.py` holds one row per category: who detects it
+(adapter, answer/verdict contract, or the service's provider boundary), whether the adapter retries
+it beneath the port, whether the answer may be generated once more, and what the request ends as.
+The service reads its regeneration decision from that table and nowhere else; the adapters' retry
+behaviour is what the table describes, and fault-injection tests prove each row
+(`tests/unit/test_failure_policy.py`). Every row ends as a technical error — `503`, fail closed, an
+availability finding — because a provider failure says nothing about the knowledge base. That
+includes a grounding check that gave no readable verdict; only a readable `not_supported` is a
+refusal (`NOT_GROUNDED`, `200`). Precedence is fixed: no reply → the adapter's facts; a parseable
+reply is never a failure; a rejected reply the provider cut off at the limit is `output_truncated`,
+any other rejected reply `unparseable_output`. Anything an adapter raises outside the port's
+contract is `unclassified` at the one awaited provider call, with its cause chained; a defect
+anywhere else is not normalised. At most three provider calls per request (two generations, one
+check), each with the adapter's bounded transport retries, all inside one request deadline
+(`request_deadline_seconds`, provisional 60s) enforced with `asyncio.timeout`; cancellation is never
+caught. Failures keep their root cause: step, category, rule or provider kind, status, attempts,
+`Retry-After`, finish reason, token usage and the provider-call records.
 
 **Privacy.** The access log records shape, not content: method, path, status, duration. Chat
 messages, prompts, retrieved passages, query strings and request bodies are not logged. Answering a
 question logs an outcome, counts, durations, the embedding space and the generation model — never
 the question, the context, the prompt or the answer. Every `extra=` field logged anywhere in `src/`
 was enumerated and reviewed in Phase 6; the complete set is counts, durations, identifiers,
-statuses, model and version names. The evaluation harness reads a dataset committed to the
+statuses, model and version names — the provider-call record included, which has no field that
+could hold text. The evaluation harness reads a dataset committed to the
 repository and never a real user's question, which is why it needed no opt-in data flow.
 
 **What leaves this process.** Two boundaries, both narrow and both worth stating plainly. The

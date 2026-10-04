@@ -1,0 +1,272 @@
+{
+  "format": "e2e-eval-v2",
+  "run": {
+    "generated_at": "2026-10-02T08:29:25+00:00",
+    "git_revision": "12faec53f680afbc94eec5af44b6bf4b21a6a55d",
+    "git_dirty": true,
+    "dataset": {
+      "path": "evaluation/portfolio-questions.yaml",
+      "sha256": "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280",
+      "version": 1,
+      "corpus": "../knowledge",
+      "question_count": 49
+    },
+    "suite": "full",
+    "question_count": 1,
+    "embedding": {
+      "provider": "mistral",
+      "model": "mistral-embed",
+      "dimensions": 1024,
+      "representation_version": "embedding-text-v1",
+      "identity": "mistral:mistral-embed:1024:embedding-text-v1"
+    },
+    "query_representation_version": "query-text-v1",
+    "vector_store": "vectorize",
+    "retrieval_policy": {
+      "top_k": 5,
+      "min_similarity": 0.25
+    },
+    "retrieval_delay_seconds": 0.0,
+    "corpus": {
+      "path": "../knowledge",
+      "documents": 12,
+      "chunks": 151,
+      "sha256": "5a180eb597190008689558b360c3de291090c2a50fb6703be75c148a106a3ec8"
+    },
+    "generation": {
+      "provider": "cloudflare_workers_ai",
+      "model": "@cf/openai/gpt-oss-120b",
+      "prompt_version": "grounded-answer-v6",
+      "grounding_check_version": "grounding-check-v1",
+      "max_prompt_tokens": 6000,
+      "output_reserve_tokens": 800,
+      "delay_seconds": 8.0
+    },
+    "notes": [],
+    "selected_question_ids": [
+      "section-lead-flow"
+    ]
+  },
+  "passed": true,
+  "gates": {
+    "no_pipeline_errors": true,
+    "citations_verified": true,
+    "unanswerable_refused": true,
+    "nothing_internal_published": true
+  },
+  "metrics": {
+    "retrieval": {
+      "answerable": 1,
+      "hit_rates": {
+        "hit@1": {
+          "correct": 1,
+          "total": 1
+        },
+        "hit@3": {
+          "correct": 1,
+          "total": 1
+        },
+        "hit@5": {
+          "correct": 1,
+          "total": 1
+        }
+      },
+      "mean_reciprocal_rank": 1.0,
+      "threshold_rejections": {},
+      "internal_leaks": 0,
+      "failures": [],
+      "observed": {
+        "correct": 1,
+        "total": 1
+      },
+      "not_observed": []
+    },
+    "availability": {
+      "completed": {
+        "correct": 1,
+        "total": 1
+      },
+      "errors_by_category": {}
+    },
+    "answers": {
+      "outcomes": {
+        "answered": 1,
+        "no_knowledge": 0,
+        "not_grounded": 0,
+        "error": 0
+      },
+      "answerable_answered": {
+        "correct": 1,
+        "total": 1
+      },
+      "answered_citing_expected_source": {
+        "correct": 1,
+        "total": 1
+      },
+      "answered_without_expected_source": []
+    },
+    "citations": {
+      "published": 4,
+      "validity": {
+        "correct": 4,
+        "total": 4
+      },
+      "invented_source_labels": 0,
+      "answerable_without_citation": []
+    },
+    "refusals": {
+      "controlled_refusals": {
+        "correct": 0,
+        "total": 0
+      },
+      "not_refused": []
+    },
+    "robustness": {
+      "pipeline_errors": 0,
+      "empty_answers": 0,
+      "internal_label_leaks": 0,
+      "internal_passages_retrieved": 0,
+      "unresolved_matches": 0,
+      "withheld_matches": 0
+    },
+    "latency": {
+      "median_seconds": 13.876,
+      "max_seconds": 13.876
+    }
+  },
+  "failures": {},
+  "questions": [
+    {
+      "id": "section-lead-flow",
+      "category": "section",
+      "question": "Wie kann ein Lead von einer Landingpage bis zu HubSpot, Slack und E-Mail-Automation weiterverarbeitet werden?",
+      "expects_an_answer": true,
+      "expected_sources": [
+        {
+          "document": "automation-email-marketing",
+          "section": "End-to-End-System"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot"
+        },
+        {
+          "document": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack"
+        }
+      ],
+      "first_relevant_rank": 1,
+      "retrieval": {
+        "matches_returned": 5,
+        "below_threshold": 0,
+        "unresolved": 0,
+        "withheld": 0,
+        "retrieved": 5
+      },
+      "hits": [
+        {
+          "rank": 1,
+          "chunk_id": "automation-email-marketing--0004",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot zu Automation zu Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot zu Automation zu Slack"
+          ],
+          "similarity": 0.90915936,
+          "relevant": true
+        },
+        {
+          "rank": 2,
+          "chunk_id": "automation-email-marketing--0003",
+          "document_id": "automation-email-marketing",
+          "section": "Landingpage zu HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Landingpage zu HubSpot"
+          ],
+          "similarity": 0.8883133,
+          "relevant": true
+        },
+        {
+          "rank": 3,
+          "chunk_id": "automation-email-marketing--0007",
+          "document_id": "automation-email-marketing",
+          "section": "Slack",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "Slack"
+          ],
+          "similarity": 0.8820151,
+          "relevant": false
+        },
+        {
+          "rank": 4,
+          "chunk_id": "automation-email-marketing--0015",
+          "document_id": "automation-email-marketing",
+          "section": "End-to-End-System",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "End-to-End-System"
+          ],
+          "similarity": 0.8508621,
+          "relevant": true
+        },
+        {
+          "rank": 5,
+          "chunk_id": "automation-email-marketing--0002",
+          "document_id": "automation-email-marketing",
+          "section": "HubSpot",
+          "heading_path": [
+            "Automation & E-Mail Marketing",
+            "HubSpot"
+          ],
+          "similarity": 0.8504363,
+          "relevant": false
+        }
+      ],
+      "retrieval_observed": true,
+      "outcome": "answered",
+      "error_code": null,
+      "error": null,
+      "answer": "Der Ablauf kann so aussehen: Ein Besucher gelangt auf die Landingpage, füllt dort das Kontakt‑ bzw. Lead‑Formular aus und die Eingaben werden validiert. Die Daten werden per API/Webhook an HubSpot übermittelt, wo ein Lead angelegt oder aktualisiert wird. Dort löst ein definierter Workflow/Automation aus, die den Lead qualifiziert und gleichzeitig eine Benachrichtigung an einen festgelegten Slack‑Kanal oder eine zuständige Person sendet. Im Anschluss startet eine automatisierte E‑Mail‑Sequenz, die weitere Follow‑up‑Prozesse initiiert.",
+      "controlled_refusal": false,
+      "support": "stated",
+      "grounding_check": "supported",
+      "context_sources": 5,
+      "citations": {
+        "claimed_source_labels": [
+          "S2",
+          "S3",
+          "S4",
+          "S1"
+        ],
+        "published": [
+          {
+            "document_id": "automation-email-marketing",
+            "section": "Landingpage zu HubSpot"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "Slack"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "End-to-End-System"
+          },
+          {
+            "document_id": "automation-email-marketing",
+            "section": "HubSpot zu Automation zu Slack"
+          }
+        ],
+        "verified": 4,
+        "cites_expected_source": true,
+        "invented_source_labels": []
+      },
+      "generation_seconds": 6.348,
+      "grounding_check_seconds": 6.3239,
+      "duration_seconds": 13.876,
+      "failures": []
+    }
+  ]
+}

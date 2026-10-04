@@ -33,7 +33,7 @@ from typing import Any, Final
 
 import httpx2 as httpx
 
-from portfolio_rag.ports.errors import LLMProviderError
+from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
 from portfolio_rag.ports.llm import (
     GenerationRequest,
     GenerationResponse,
@@ -144,12 +144,15 @@ class MistralChatProvider:
                 error = LLMProviderError(
                     f"Mistral generation timed out after {self._timeout_seconds}s.",
                     retryable=True,
+                    kind=ProviderFailureKind.TIMEOUT,
                 )
             except httpx.RequestError:
                 # The exception text can carry the full URL; the message is
                 # composed here so nothing unexpected reaches a log.
                 error = LLMProviderError(
-                    "Mistral could not be reached for generation.", retryable=True
+                    "Mistral could not be reached for generation.",
+                    retryable=True,
+                    kind=ProviderFailureKind.UNREACHABLE,
                 )
             else:
                 if response.status_code < 400:
@@ -160,6 +163,7 @@ class MistralChatProvider:
                 )
 
             if not error.retryable or attempt == self._max_attempts:
+                error.attempts = attempt
                 raise error
             await self._sleep(self._retry_delay)
 
@@ -191,18 +195,25 @@ def _status_error(
     """Map an HTTP status to a message. The response body is never included."""
     if status_code in _AUTH_STATUS:
         return LLMProviderError(
-            f"Mistral rejected the credentials (HTTP {status_code}).", retryable=False
+            f"Mistral rejected the credentials (HTTP {status_code}).",
+            retryable=False,
+            kind=ProviderFailureKind.HTTP_STATUS,
+            status_code=status_code,
         )
     if status_code == 429:
         return LLMProviderError(
             "Mistral rate limit reached during generation.",
             retryable=True,
             retry_after_seconds=retry_after_seconds,
+            kind=ProviderFailureKind.RATE_LIMITED,
+            status_code=status_code,
         )
     return LLMProviderError(
         f"Mistral returned HTTP {status_code} during generation.",
         retryable=status_code in _RETRYABLE_STATUS,
         retry_after_seconds=retry_after_seconds,
+        kind=ProviderFailureKind.HTTP_STATUS,
+        status_code=status_code,
     )
 
 
@@ -237,38 +248,67 @@ def _decode_json(response: httpx.Response) -> dict[str, Any]:
     try:
         body = response.json()
     except ValueError as exc:
-        raise LLMProviderError("Mistral returned a body that is not JSON.") from exc
+        raise LLMProviderError(
+            "Mistral returned a body that is not JSON.", kind=ProviderFailureKind.MALFORMED_RESPONSE
+        ) from exc
     if not isinstance(body, dict):
-        raise LLMProviderError("Mistral returned JSON that is not an object.")
+        raise LLMProviderError(
+            "Mistral returned JSON that is not an object.",
+            kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        )
     return body
 
 
 def _parse_completion(body: dict[str, Any], *, fallback_model: str) -> GenerationResponse:
-    """Validate the response shape before a single character is trusted."""
+    """Validate the response shape before a single character is trusted.
+
+    Usage and, once a choice is readable, the finish reason are taken first,
+    so that a response that is not a completion still reports them.
+    """
+    usage = _parse_usage(body.get("usage"))
+
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise LLMProviderError("Mistral response contains no choices.")
+        raise _malformed("Mistral response contains no choices.", usage=usage)
 
     first = choices[0]
     if not isinstance(first, dict):
-        raise LLMProviderError("Mistral choice is not an object.")
+        raise _malformed("Mistral choice is not an object.", usage=usage)
+
+    raw_finish = first.get("finish_reason")
+    finish_reason = raw_finish if isinstance(raw_finish, str) else None
 
     message = first.get("message")
     if not isinstance(message, dict):
-        raise LLMProviderError("Mistral choice carries no message.")
+        raise _malformed(
+            "Mistral choice carries no message.", finish_reason=finish_reason, usage=usage
+        )
 
     content = message.get("content")
     if not isinstance(content, str):
-        raise LLMProviderError("Mistral message carries no text content.")
+        raise _malformed(
+            "Mistral message carries no text content.", finish_reason=finish_reason, usage=usage
+        )
 
-    finish_reason = first.get("finish_reason")
     model = body.get("model")
 
     return GenerationResponse(
         text=content,
         model=model if isinstance(model, str) and model else fallback_model,
-        finish_reason=finish_reason if isinstance(finish_reason, str) else None,
-        usage=_parse_usage(body.get("usage")),
+        finish_reason=finish_reason,
+        usage=usage,
+    )
+
+
+def _malformed(
+    message: str, *, finish_reason: str | None = None, usage: TokenUsage | None = None
+) -> LLMProviderError:
+    """A response that is not a completion, with whatever metadata it did carry."""
+    return LLMProviderError(
+        message,
+        kind=ProviderFailureKind.MALFORMED_RESPONSE,
+        finish_reason=finish_reason,
+        usage=usage,
     )
 
 

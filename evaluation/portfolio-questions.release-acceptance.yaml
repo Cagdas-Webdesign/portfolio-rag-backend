@@ -1,0 +1,57 @@
+# Release acceptance suite for `portfolio-questions.yaml` — question ids only.
+#
+#   uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier acceptance ...
+#
+# The 24 questions a live release acceptance asks: maximum risk coverage per
+# question, not the 24 easiest. Every question the evaluation history shows to
+# be hard stays in — a retrieval miss, an answered unknown, a truncated reply,
+# a grounding check without a verdict — because removing them would be tuning
+# the benchmark, not reducing it. The 49-question dataset stays whole as the
+# extended validation suite (`--suite full`); the reasoning for each of the 49
+# is in README.md, "Release acceptance suite".
+#
+#   role                        ids
+#   normal use                  direct-wordpress-experience, direct-abitur (not_grounded once on a
+#                               simple fact), direct-contact, paraphrased-root-cause,
+#                               paraphrased-premium-plugins
+#   retrieval boundary          paraphrased-component-ui (rank 5 of top_k 5), paraphrased-scroll-animation
+#                               (miss in every run), broad-ai-technologies, broad-project-scope (misses)
+#   grounding-sensitive         paraphrased-edge-backend, multi-frontend-backend-ai (not_grounded twice each)
+#   multi-source                multi-marketing-automation-web, multi-api-backend-evidence
+#   broad / provider history    broad-deployment, broad-frontend-backend-in-portfolio
+#   structure-critical          ambiguous-frontend-technologies, ambiguous-api-frontend, section-lead-flow
+#   leading / adversarial text  section-degree-claim, section-prompt-injection
+#   must refuse                 unknown-kubernetes-production, unknown-medical-training,
+#                               unknown-phone-number, unknown-major-clients
+#
+# Selection is by id and the dataset's own order is kept. Changing a single id
+# is a new suite version.
+
+version: 1
+dataset: portfolio-questions.yaml
+
+questions:
+  - direct-wordpress-experience
+  - direct-abitur
+  - direct-contact
+  - paraphrased-component-ui
+  - paraphrased-premium-plugins
+  - paraphrased-edge-backend
+  - paraphrased-scroll-animation
+  - paraphrased-root-cause
+  - multi-frontend-backend-ai
+  - multi-marketing-automation-web
+  - multi-api-backend-evidence
+  - section-prompt-injection
+  - section-degree-claim
+  - section-lead-flow
+  - ambiguous-frontend-technologies
+  - ambiguous-api-frontend
+  - unknown-phone-number
+  - unknown-major-clients
+  - unknown-kubernetes-production
+  - unknown-medical-training
+  - broad-deployment
+  - broad-ai-technologies
+  - broad-frontend-backend-in-portfolio
+  - broad-project-scope

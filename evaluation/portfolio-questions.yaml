@@ -39,6 +39,18 @@
 # none was added because retrieval happened to return it. Consequence: hit
 # rates and MRR measured after this audit are NOT comparable with numbers
 # measured before it.
+#
+# Ground truth audit, 2026-10-01, after the first production retrieval run:
+# two questions gained one expected source each — `broad-system-flow`
+# (custom-rag-backend › End-to-End-Systemablauf) and `multi-frontend-backend-ai`
+# (react-portfolio › Positionierung). Same test as above: the section, read
+# alone, answers the question. Considered and not added:
+# fullstack-web-development › Motion und Web Animation for
+# `paraphrased-scroll-animation` (names GSAP and Framer Motion without saying
+# which one drives scroll or timeline animation), and api-backend-databases ›
+# Positionierung for `multi-frontend-backend-ai` (a general statement about
+# connecting systems; it does not describe the portfolio or name AI). Numbers
+# measured before this audit are NOT comparable with numbers measured after it.
 
 version: 1
 corpus: ../knowledge
@@ -226,6 +238,8 @@ questions:
         section: AI and RAG Development
       - document: react-portfolio
         section: Portfolio Assistant Integration
+      - document: react-portfolio
+        section: Positionierung
 
   - id: multi-fullstack-role
     category: multi_source
@@ -465,6 +479,8 @@ questions:
         section: Grundprinzip
       - document: custom-rag-backend
         section: Technologie-Stack
+      - document: custom-rag-backend
+        section: End-to-End-Systemablauf
 
   - id: broad-deployment
     category: multi_source

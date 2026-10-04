@@ -1,0 +1,43 @@
+# Smoke suite for `portfolio-questions.yaml` — question ids only.
+#
+#   uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --suite smoke
+#
+# Twelve of the 49 questions, two per category, for a quick check against the
+# real providers. The questions and their ground truth live only in the
+# dataset; this file names ids and nothing else, so it cannot drift from them.
+# Selection is by id and the dataset's own order is kept, so reordering either
+# file changes nothing. The full 49-question run stays the baseline — a smoke
+# result is a check, not a measurement to quote.
+#
+# Within each category the two questions were picked to cover different
+# retrieval situations rather than two of the same kind:
+#
+#   direct        direct-languages             one fact, exactly one accepted section
+#                 broad-assistant-stack        broad overview, accepted in three documents
+#   section       section-http-200-wrong       three sections of one document compete
+#                 section-degree-claim         leading question the corpus contradicts
+#   multi_source  multi-marketing-automation-web  non-technical, spread over three documents
+#                 broad-mistral-vectorize-roles   technical, five sections, mostly one document
+#   paraphrased   paraphrased-scroll-animation    the question never names the answer's key term, GSAP
+#                 paraphrased-root-cause          working-style prose, two documents
+#   ambiguous     ambiguous-api-frontend       same heading ("API Integration") in three documents
+#                 ambiguous-react-role         one topic, near-matches across three documents
+#   unknown       unknown-phone-number         contact details exist nearby; the number does not
+#                 unknown-kubernetes-production   "Kubernetes" occurs, but only as not used
+
+version: 1
+dataset: portfolio-questions.yaml
+
+questions:
+  - direct-languages
+  - broad-assistant-stack
+  - section-http-200-wrong
+  - section-degree-claim
+  - multi-marketing-automation-web
+  - broad-mistral-vectorize-roles
+  - paraphrased-scroll-animation
+  - paraphrased-root-cause
+  - ambiguous-api-frontend
+  - ambiguous-react-role
+  - unknown-phone-number
+  - unknown-kubernetes-production
