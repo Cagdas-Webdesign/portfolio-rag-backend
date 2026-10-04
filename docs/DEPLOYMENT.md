@@ -20,7 +20,7 @@ not invented for the document. No value shown is a credential.
 | Embeddings | Mistral — `mistral-embed` |
 | Vector store | Cloudflare Vectorize |
 | Corpus | `knowledge/`, indexed into the production index |
-| Retrieval | evaluated against the real corpus on the production path; `top_k` 5, `min_similarity` 0.250 |
+| Retrieval | evaluated against the real corpus on the production path; `top_k` 7 (from 5, measured 2026-10-04 — see `evaluation/README.md`), `min_similarity` 0.250 |
 | Verification | the [step 7](#7-verify) smoke test completed successfully — `/health`, a grounded answer with citations, and the controlled refusal path |
 
 Account ids, index names, tokens, secrets and service URLs are deployment configuration and are

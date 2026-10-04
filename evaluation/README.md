@@ -140,7 +140,7 @@ coverage, the historical cases and the unchanged dataset.
 | `direct-wordpress-experience` | normal use: one fact | `wordpress-woocommerce` | the plainest question in its area |
 | `direct-abitur` | normal use: one fact | `education-and-qualifications` (second section) | `not_grounded` on a simple fact (10-02): grounding-sensitive where it should be easy |
 | `direct-contact` | normal use: contact | `job-fit-and-contact`; boundary pair with `unknown-phone-number` | public contact must be answered, private number refused |
-| `paraphrased-component-ui` | retrieval boundary | three sections, two documents | first relevant at rank **5 of top_k 5** in every run — any drift becomes a miss |
+| `paraphrased-component-ui` | retrieval boundary | three sections, two documents | first relevant at rank **5** in every run — at the edge of the old window of 5 |
 | `paraphrased-premium-plugins` | paraphrase | `wordpress-woocommerce` + `plugin-development` | `not_grounded` once (10-03); the only `plugin-development` coverage |
 | `paraphrased-edge-backend` | grounding-sensitive | `api-backend-databases` (Cloudflare), rank 2 | `not_grounded` twice (10-02, 10-03) |
 | `paraphrased-scroll-animation` | retrieval miss | key term (GSAP) never named | missed in every run |
@@ -199,6 +199,36 @@ carries the same risk is named.
 Security`, `Unknown Questions`) are no longer asked about by name. They describe the backend's own
 mechanisms; the mechanisms themselves are exercised by every kept question and pinned by the local
 test suite. `section-prompt-injection` remains as the one question about them.
+
+### The window sweep (2026-10-04)
+
+Why `top_k` is 7. One retrieval-only export of the 24 release-acceptance questions against the
+production path — `mistral-embed`, Vectorize, clean commit `2625aff`, `--top-k 30
+--min-similarity -1` (`results/retrieval-top30-release-acceptance.json`) — and every candidate
+policy applied offline to the same 30-item lists. No generation was involved; the numbers are
+retrieval only, over the 20 answerable questions.
+
+| Policy | hit@1 / 3 / 5 | MRR | expected sources covered | sources lost on any question | context |
+| --- | --- | --- | --- | --- | --- |
+| 5 passages (was the default) | 13 / 16 / 17 | 0.735 | 0.598 | — | 2,400 chars |
+| 10 candidates, ≤ 2 per document, 5 passages | 13 / 16 / 17 | 0.738 | 0.593 | `section-lead-flow` −1 | 2,351 |
+| 20 candidates, ≤ 2 per document, 5 passages | 13 / 16 / 17 | 0.738 | 0.593 | `section-lead-flow` −1 | 2,430 |
+| 20 candidates, ≤ 3 per document, 5 passages | 13 / 16 / 17 | 0.735 | 0.593 | `section-lead-flow` −1 | 2,398 |
+| as above, cap only below the top score − 0.02 / 0.03 | 13 / 16 / 17 | 0.735 | 0.581 | `section-lead-flow` −1 | 2,420 |
+| **7 passages** | 13 / 16 / 17 | **0.742** | **0.614** | **none** | 3,463 |
+| 8 passages | 13 / 16 / 17 | 0.742 | 0.627 | none | 3,991 |
+| 20 candidates, ≤ 2 per document, 7 passages | 13 / 16 / 17 | 0.746 | 0.622 | `section-lead-flow` −1 | 3,457 |
+
+Every per-document cap took a section from `section-lead-flow`, which needs three sections of one
+document and is answered correctly at 5. Seven passages lost nothing anywhere and brought the
+section that answers `broad-ai-technologies` (rank 7) into the context; eight added one more source
+for half as much context again. What no window up to eight changes: the AI/RAG sections
+`multi-frontend-backend-ai` needs rank 13 and below, and the expected sources of
+`broad-project-scope` rank 12 and 29. Those stay retrieval findings.
+
+Seven passages of the largest size chunking allows exceed the context budget by one; the excess is
+skipped and counted, never cut. The seven largest passages of the current corpus fit with room
+(2,986 of 4,183 tokens). A test asserts both.
 
 ## Read this before quoting a number
 
@@ -291,7 +321,8 @@ The dataset in `portfolio-questions.yaml` — 49 questions against the 12 docume
 Cloudflare Vectorize as the store, which is the combination the deployed service uses. That answers
 the question the fixture numbers above deliberately cannot.
 
-Production runs at the shipped policy defaults, `top_k` 5 and `min_similarity` **0.250**
+Production runs at the shipped policy defaults, `top_k` **7** (5 until 2026-10-04, see
+[The window sweep](#the-window-sweep-2026-10-04)) and `min_similarity` **0.250**
 (`portfolio_rag.rag.policy`), unchanged by that exercise.
 
 **No per-question metrics from that run are recorded in this repository**, so none are quoted here —

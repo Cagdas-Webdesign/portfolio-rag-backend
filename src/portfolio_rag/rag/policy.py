@@ -24,10 +24,21 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-#: How many candidates a search asks for. Conservative: five bounded chunks is
-#: already a substantial context, and asking for more mostly buys weaker
-#: matches that the threshold then has to argue with.
-DEFAULT_TOP_K: Final = 5
+#: How many candidates a search asks for — and, since nothing reranks them,
+#: how many passages the answer may draw on.
+#:
+#: **Seven, by measurement.** Swept on 2026-10-04 over the 24 release-acceptance
+#: questions against the production path (`mistral-embed`, Vectorize), from one
+#: top-30 retrieval export per question: five, seven and eight passages, and
+#: per-document diversity caps over a 10- and 20-candidate window. Every
+#: diversity cap cost `section-lead-flow` one of the three sections of one
+#: document it needs. Seven lost no expected source on any question, kept
+#: hit@1/3/5 (13/16/17 of 20), raised MRR 0.735 → 0.742 and expected-source
+#: coverage 0.598 → 0.614, and brought a passage that answers a broad question
+#: (rank 7) into the context. Eight added one more source at +66 % context
+#: instead of +44 %. The record is in `evaluation/README.md`. Like the
+#: threshold, this is a property of one embedding space: re-measure it there.
+DEFAULT_TOP_K: Final = 7
 
 #: Below this cosine similarity, a match is not treated as evidence.
 #:

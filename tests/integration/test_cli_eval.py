@@ -29,6 +29,7 @@ from portfolio_rag.core.config import EmbeddingProviderName, LLMProviderName, ge
 from portfolio_rag.core.request_context import get_request_id
 from portfolio_rag.infrastructure.llm import DeterministicLLMProvider
 from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
+from portfolio_rag.rag.policy import DEFAULT_TOP_K
 from portfolio_rag.rag.service import GroundedAnswerService
 
 DATASET = Path("evaluation/questions.yaml")
@@ -252,7 +253,7 @@ def test_a_raw_run_exports_every_match_the_store_returned(
 
     The deterministic vectors score far below the production threshold, so at
     the default these questions would export nothing. At `-1` every question
-    carries its five matches, scores included, and a higher threshold can be
+    carries its `top_k` matches, scores included, and a higher threshold can be
     applied afterwards by filtering the file.
     """
     target = tmp_path / "raw.json"
@@ -261,12 +262,12 @@ def test_a_raw_run_exports_every_match_the_store_returned(
 
     data = _read_json(target)
     assert data["run"]["retrieval_policy"] == {
-        "top_k": 5,
+        "top_k": DEFAULT_TOP_K,
         "min_similarity": -1.0,
         "visibility": "public",
     }
     for question in data["questions"]:
-        assert len(question["hits"]) == 5
+        assert len(question["hits"]) == DEFAULT_TOP_K
         assert question["retrieval"]["below_threshold"] == 0
         scores = [hit["similarity"] for hit in question["hits"]]
         assert scores == sorted(scores, reverse=True)
