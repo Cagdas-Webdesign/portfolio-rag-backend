@@ -76,8 +76,18 @@ the one place they live); a call that reported no usage is counted at the upper 
 CAUTION ≤ 70 %, EXCESSIVE above. **Zones** decide: GREEN within the target share (50 % for acceptance,
 10 % for smoke) with the minimum reserve (`--minimum-reserve`, default 4,000) intact — start;
 YELLOW above the target share, reserve intact — start only with `--allow-yellow`; RED when the
-reserve would not survive or the run alone would be EXCESSIVE — no start, no override. The reserve
-is the rule and 50 % a target: 5,001 neurons is a deliberate start, not a refusal.
+reserve would not survive or the run alone would be EXCESSIVE — no start. The reserve is the rule
+and 50 % a target: 5,001 neurons is a deliberate start, not a refusal.
+
+**One override, by name, for one run.** `--override-budget-reserve` sets the minimum reserve aside
+and nothing else: the run is then RED only when today's known spend plus the forecast would exceed
+the nominal daily budget, the guard stops it at that budget instead of the reserve's edge, and the
+preflight prints `WARNING: minimum reserve manually overridden for this run`. The EXCESSIVE limit,
+`--allow-yellow`, every blocker (a failed smoke run today, the rerun rule) and the guard's stops on
+a 429, refused credentials and a failing provider stay as they are. The export's
+`operations.budget_override` records whether it was used, the known spend, the forecast, the
+projected total, the budget, the reserve, when it was decided and the run id; the ledger entry
+carries `budget_override_used`.
 
 **During the run** a guard stops early, keeps what was measured and marks the run aborted, on: a
 429 (whether a short rate limit or the day's allocation cannot be told apart — no further call is

@@ -400,6 +400,15 @@ def _add_eval_group(groups: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     run.add_argument(
+        "--override-budget-reserve",
+        action="store_true",
+        help=(
+            "With --e2e --tier: set the minimum reserve aside for this one deliberate run. "
+            "The run must still fit the nominal daily budget, and every other guard stands. "
+            "Recorded in the export and the ledger."
+        ),
+    )
+    run.add_argument(
         "--daily-budget",
         type=float,
         default=DAILY_BUDGET_NEURONS,
@@ -1061,10 +1070,21 @@ def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
         )
         for warning in plan.warnings:
             print(f"  ! {warning}", file=out)
+        if plan.reserve_overridden:
+            print(file=out)
+            print("WARNING: minimum reserve manually overridden for this run", file=out)
+            print("WARNING: minimum reserve manually overridden for this run", file=sys.stderr)
         if not plan.can_start(yellow_confirmed=args.allow_yellow):
             for blocker in plan.blockers:
                 print(f"Not started: {blocker}", file=sys.stderr)
-            if plan.zone is BudgetZone.RED:
+            if plan.zone is BudgetZone.RED and plan.reserve_overridden:
+                print(
+                    "Not started: budget zone RED — known spend today plus the forecast would "
+                    "exceed the nominal daily budget, which no override sets aside. Nothing "
+                    "was requested.",
+                    file=sys.stderr,
+                )
+            elif plan.zone is BudgetZone.RED:
                 print(
                     "Not started: budget zone RED — the forecast would not leave the minimum "
                     "reserve. Nothing was requested.",
@@ -1128,7 +1148,11 @@ def _e2e_argument_problem(args: argparse.Namespace) -> str | None:
             return "--summary and --note belong to an --e2e run"
         if args.tier is not None or args.preflight_only or args.allow_yellow:
             return "--tier, --preflight-only and --allow-yellow belong to an --e2e run"
+        if args.override_budget_reserve:
+            return "--override-budget-reserve belongs to an --e2e --tier run"
         return None
+    if args.override_budget_reserve and args.tier is None:
+        return "--override-budget-reserve belongs to an --e2e --tier run"
     if args.retrieval_only:
         return "--e2e answers every question, which --retrieval-only rules out"
     if args.output is None:
@@ -1398,6 +1422,8 @@ def _plan_provider_run(
         dirty=git.dirty,
         rerun_of=args.rerun_of,
         source_identity=git.source_identity,
+        override_reserve=args.override_budget_reserve,
+        decided_at=datetime.now(UTC),
     )
     target = args.output.parent if args.output.parent != Path() else Path.cwd()
     if not target.is_dir():
@@ -1407,6 +1433,7 @@ def _plan_provider_run(
 
 def _operations(
     args: argparse.Namespace,
+    run_id: str,
     plan: Preflight,
     guard: RunGuard,
     report: E2EReport,
@@ -1415,8 +1442,10 @@ def _operations(
     calls = [call for record in report.records for call in record.provider_calls]
     reported = [call for call in calls if call.usage_reported]
     known_after = plan.known_consumption + guard.estimated_neurons
+    fields = plan.fields()
     return {
-        **plan.fields(),
+        **fields,
+        "budget_override": {**fields["budget_override"], "run_id": run_id},
         "status": "complete" if report.aborted is None else "aborted",
         "abort_reason": report.aborted.reason.value if report.aborted else None,
         "observed": {
@@ -1479,6 +1508,7 @@ def _ledger_entry(
         rerun_of=rerun_of,
         failed_gates=[name for name, ok in report.gates.items() if not ok],
         release_source_identity=git.source_identity,
+        budget_override_used=plan.reserve_overridden,
     )
 
 
@@ -1691,7 +1721,7 @@ async def _evaluate_e2e(
     )
     verdict = smoke_verdict(report) if plan is not None and plan.tier is Tier.SMOKE else None
     operations = (
-        _operations(args, plan, guard, report, verdict)
+        _operations(args, run_id, plan, guard, report, verdict)
         if plan is not None and guard is not None
         else None
     )

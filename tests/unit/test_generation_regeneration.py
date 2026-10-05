@@ -32,6 +32,7 @@ from portfolio_rag.rag.errors import (
     ProviderCallType,
 )
 from portfolio_rag.rag.generation import SupportVerdict
+from portfolio_rag.rag.policy import ContextPolicy
 from portfolio_rag.rag.service import (
     INSUFFICIENT_KNOWLEDGE_ANSWER,
     MAX_GENERATION_ATTEMPTS,
@@ -126,9 +127,20 @@ def test_a_truncated_reply_is_generated_again_and_the_second_reply_is_used():
     assert llm.check_count == 1
 
 
-def test_the_second_request_is_the_same_request():
-    """Nothing is loosened for the retry: same prompt, same limit, same format."""
+def test_the_second_request_is_the_same_request_with_room_to_finish():
+    """Nothing is loosened for the retry but the output cap: same prompt, same
+    format. A reply that stopped at the limit is asked again with more room."""
     _, llm = _answer(TRUNCATED, GOOD)
+    first, second = llm.requests
+    policy = ContextPolicy()
+
+    assert first.max_output_tokens == policy.output_reserve_tokens
+    assert second.max_output_tokens == policy.recovery_output_tokens
+    assert second.model_copy(update={"max_output_tokens": first.max_output_tokens}) == first
+
+
+def test_a_malformed_response_that_did_not_stop_at_the_limit_is_asked_again_unchanged():
+    _, llm = _answer(MALFORMED, GOOD)
 
     assert llm.requests[0] == llm.requests[1]
 
@@ -362,7 +374,7 @@ def test_the_grounding_check_is_asked_once_whatever_it_replies(check: ScriptedRe
     assert error.failure.step is ProviderCallType.GROUNDING_CHECK
 
 
-def test_an_unreachable_grounding_check_is_still_an_outage_after_one_request():
+def test_an_unreachable_grounding_check_is_an_outage_after_its_one_recovery():
     llm = ScriptedLLMProvider(
         GOOD,
         grounding_check=ScriptedReply(
@@ -374,7 +386,7 @@ def test_an_unreachable_grounding_check_is_still_an_outage_after_one_request():
     with pytest.raises(GenerationUnavailableError):
         run(service.answer(QUESTION))
 
-    assert llm.call_count == 1 and llm.check_count == 1
+    assert llm.call_count == 1 and llm.check_count == 2
 
 
 # --- through the real Workers AI adapter --------------------------------------------

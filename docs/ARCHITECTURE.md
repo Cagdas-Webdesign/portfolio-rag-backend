@@ -494,8 +494,9 @@ routing, retry or refusal reads it.
 **Failure policy.** Every way a call to the generation provider can fail is one
 `GenerationFailureCategory`, and `rag/failure_policy.py` holds one row per category: who detects it
 (adapter, answer/verdict contract, or the service's provider boundary), whether the adapter retries
-it beneath the port, whether the answer may be generated once more, and what the request ends as.
-The service reads its regeneration decision from that table and nowhere else; the adapters' retry
+it beneath the port, whether the step that failed — generation or grounding check — may be asked
+once more, and what the request ends as. The service reads its recovery decision from that table
+and nowhere else; the adapters' retry
 behaviour is what the table describes, and fault-injection tests prove each row
 (`tests/unit/test_failure_policy.py`). Every row ends as a technical error — `503`, fail closed, an
 availability finding — because a provider failure says nothing about the knowledge base. That
@@ -504,8 +505,11 @@ refusal (`NOT_GROUNDED`, `200`). Precedence is fixed: no reply → the adapter's
 reply is never a failure; a rejected reply the provider cut off at the limit is `output_truncated`,
 any other rejected reply `unparseable_output`. Anything an adapter raises outside the port's
 contract is `unclassified` at the one awaited provider call, with its cause chained; a defect
-anywhere else is not normalised. At most three provider calls per request (two generations, one
-check), each with the adapter's bounded transport retries, all inside one request deadline
+anywhere else is not normalised. A recovery is one more request of the same step, for a response
+that was not a completion or a reply cut off at the output limit; when the provider said it stopped
+at the limit, that request asks for `recovery_output_tokens` (1500) instead of the 800-token
+reserve, and a first request never does. At most four provider calls per request (two generations,
+two checks), each with the adapter's bounded transport retries, all inside one request deadline
 (`request_deadline_seconds`, provisional 60s) enforced with `asyncio.timeout`; cancellation is never
 caught. Failures keep their root cause: step, category, rule or provider kind, status, attempts,
 `Retry-After`, finish reason, token usage and the provider-call records.

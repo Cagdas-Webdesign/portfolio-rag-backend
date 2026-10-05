@@ -60,6 +60,7 @@ from portfolio_rag.evaluation.e2e import (
 from portfolio_rag.ports.llm import ResponseFormat
 from portfolio_rag.rag.errors import GenerationFailureCategory
 from portfolio_rag.rag.policy import DEFAULT_CONTEXT_POLICY, ContextPolicy
+from portfolio_rag.rag.service import MAX_GENERATION_ATTEMPTS, MAX_GROUNDING_CHECK_ATTEMPTS
 from portfolio_rag.rag.telemetry import CallResult, ProviderCallRecord, ProviderCallType
 
 _logger = get_logger(__name__)
@@ -96,6 +97,14 @@ _SYSTEMIC_STREAK: Final = 2
 #: One question weighs a sixth, five weigh half, fifteen three quarters.
 _GUARD_PRIOR_WEIGHT: Final = 5
 
+#: The provider calls one question may make at most: every generation and
+#: every grounding check the failure policy allows. Transport retries beneath
+#: the port are the adapter's and are not port calls.
+MAX_PORT_CALLS_PER_QUESTION: Final = MAX_GENERATION_ATTEMPTS + MAX_GROUNDING_CHECK_ATTEMPTS
+
+#: The one budget rule an operator may overrule for a run, by name.
+OVERRIDE_MINIMUM_RESERVE: Final = "minimum_reserve"
+
 #: Questions observed before a *projection* may stop a run. A median of three
 #: is not moved by one expensive question; a median of one is that question.
 #: A run whose actual spend crosses the line is stopped regardless.
@@ -130,8 +139,19 @@ class Preflight:
 
     warnings: tuple[str, ...]
     max_port_calls: int
-    """The ceiling the failure policy sets: two generations and one check per
+    """The ceiling the failure policy sets: two generations and two checks per
     question. The forecast is the expectation; this is the bound."""
+
+    reserve_overridden: bool = False
+    """The operator set the minimum reserve aside for this run, by name. The
+    run may spend into it, never past the nominal daily budget."""
+
+    reserve_kept: bool = True
+    """Whether the forecast keeps the minimum reserve — what the zone would
+    say without an override. ``True`` for a provider not billed in neurons."""
+
+    decided_at: str | None = None
+    """When the preflight was decided, UTC, ISO 8601."""
 
     @property
     def confirmation_required(self) -> bool:
@@ -154,6 +174,30 @@ class Preflight:
         if self.forecast is None:
             return None
         return cost_band(self.forecast.neurons, self.policy.daily_budget)
+
+    @property
+    def projected_total(self) -> float | None:
+        """Today's known spend plus this run's forecast."""
+        if self.forecast is None:
+            return None
+        return self.known_consumption + self.forecast.neurons
+
+    def override_fields(self) -> dict[str, Any]:
+        """The audit record of the reserve override. Present on every run, so
+        that an export says whether it was used, not only when it was."""
+        return {
+            "budget_override_used": self.reserve_overridden,
+            "override_type": OVERRIDE_MINIMUM_RESERVE if self.reserve_overridden else None,
+            "reserve_kept_without_override": self.reserve_kept,
+            "known_local_today": round(self.known_consumption, 1),
+            "forecast": round(self.forecast.neurons, 1) if self.forecast else None,
+            "projected_total": (
+                round(self.projected_total, 1) if self.projected_total is not None else None
+            ),
+            "nominal_daily_budget": self.policy.daily_budget,
+            "minimum_reserve": self.policy.minimum_reserve,
+            "decided_at": self.decided_at,
+        }
 
     def can_start(self, *, yellow_confirmed: bool) -> bool:
         if self.blockers or self.zone is BudgetZone.RED:
@@ -187,6 +231,7 @@ class Preflight:
             "confirmation_required": self.confirmation_required,
             "blockers": list(self.blockers),
             "warnings": list(self.warnings),
+            "budget_override": self.override_fields(),
         }
 
 
@@ -206,6 +251,8 @@ def preflight(
     dirty: bool | None = None,
     rerun_of: str | None = None,
     source_identity: str | None = None,
+    override_reserve: bool = False,
+    decided_at: datetime | None = None,
 ) -> Preflight:
     """Decide, before a single call, whether a run may start and what it will cost.
 
@@ -219,7 +266,12 @@ def preflight(
     every acceptance run in the ledger, of any day: *commit* and *dirty* are
     the tree the run is about to start from, and *source_identity* the
     release candidate it holds.
+
+    *override_reserve* sets the minimum reserve aside for this run and nothing
+    else: the zone is then judged against the nominal daily budget, and every
+    blocker — the rerun rule, a failed smoke run, an unreadable plan — stands.
     """
+    stamp = decided_at.isoformat() if decided_at is not None else None
     if tier is Tier.SMOKE:
         # A health check is held to a health check's budget.
         policy = replace(policy, target_share=SMOKE_TARGET_SHARE)
@@ -266,11 +318,14 @@ def preflight(
             zone=BudgetZone.GREEN,
             blockers=tuple(blockers),
             warnings=tuple(warnings),
-            max_port_calls=3 * questions,
+            max_port_calls=MAX_PORT_CALLS_PER_QUESTION * questions,
+            reserve_overridden=override_reserve,
+            decided_at=stamp,
         )
 
     forecast = forecast_run(questions, history, profile, context_policy, today=today)
-    zone = budget_zone(forecast.neurons, known, policy)
+    zone = budget_zone(forecast.neurons, known, policy, reserve_overridden=override_reserve)
+    reserve_kept = known + forecast.neurons <= policy.spendable
     if forecast.confidence is Confidence.LOW:
         warnings.append(
             "forecast confidence is low, so the forecast is the structural upper bound: "
@@ -296,7 +351,10 @@ def preflight(
         zone=zone,
         blockers=tuple(blockers),
         warnings=tuple(warnings),
-        max_port_calls=3 * questions,
+        max_port_calls=MAX_PORT_CALLS_PER_QUESTION * questions,
+        reserve_overridden=override_reserve,
+        reserve_kept=reserve_kept,
+        decided_at=stamp,
     )
 
 
@@ -553,11 +611,14 @@ class RunGuard:
         """Whether finishing the run is now expected to eat into the reserve.
 
         Stops only on the reserve — not on a run that is merely over its
-        forecast, and not on the cost band, which is reported.
+        forecast, and not on the cost band, which is reported. With the
+        reserve overridden for this run, on the nominal daily budget instead.
         """
         if self.projected_final_neurons is None or self._preflight.profile is None:
             return False
-        spendable = self._preflight.policy.spendable
+        spendable = self._preflight.policy.ceiling(
+            reserve_overridden=self._preflight.reserve_overridden
+        )
         if self._preflight.known_consumption + self.estimated_neurons > spendable:
             return True
         if len(self._per_question) < _GUARD_MIN_QUESTIONS:
@@ -654,14 +715,22 @@ def describe_preflight(
                 "—" if forecast.usage_coverage is None else f"{forecast.usage_coverage:.0%}",
             ),
         ]
+    reserve = f"{preflight.policy.minimum_reserve:,.0f}"
+    if preflight.reserve_overridden:
+        reserve += " (manually overridden for this run)"
     rows += [
         ("daily nominal budget", f"{preflight.policy.daily_budget:,.0f}"),
-        ("minimum reserve", f"{preflight.policy.minimum_reserve:,.0f}"),
+        ("minimum reserve", reserve),
         ("known local today", f"{preflight.known_consumption:,.0f}"),
         ("actual remaining", "unknown (not visible to this tool)"),
     ]
     if preflight.estimated_reserve_after is not None:
         rows.append(("est. nominal reserve after", f"{preflight.estimated_reserve_after:,.0f}"))
+    if preflight.projected_total is not None:
+        rows.append(("projected total today", f"{preflight.projected_total:,.0f}"))
+    rows.append(
+        ("budget override", OVERRIDE_MINIMUM_RESERVE if preflight.reserve_overridden else "none")
+    )
     rows += [
         ("budget zone", preflight.zone.value.upper()),
         ("confirmation required", "yes" if preflight.confirmation_required else "no"),

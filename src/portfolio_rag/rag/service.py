@@ -74,7 +74,11 @@ from portfolio_rag.rag.errors import (
     provider_failure,
     visible_characters,
 )
-from portfolio_rag.rag.failure_policy import classify_unusable_reply, may_regenerate
+from portfolio_rag.rag.failure_policy import (
+    classify_unusable_reply,
+    may_recover,
+    needs_larger_output,
+)
 from portfolio_rag.rag.generation import GroundedAnswerDraft, SupportVerdict, parse_generation
 from portfolio_rag.rag.language import (
     INSUFFICIENT_KNOWLEDGE_ANSWERS,
@@ -121,8 +125,18 @@ INSUFFICIENT_KNOWLEDGE_ANSWER: Final = INSUFFICIENT_KNOWLEDGE_ANSWERS[AnswerLang
 #: provider — and not a second chance for anything else: which failures allow
 #: one is decided in :mod:`portfolio_rag.rag.failure_policy`, nowhere else.
 #: Bounded at one extra request, so a provider that keeps failing costs twice,
-#: never more.
+#: never more. When the first reply stopped at the output limit, the second
+#: request may spend up to :attr:`ContextPolicy.recovery_output_tokens`; the
+#: first never does.
 MAX_GENERATION_ATTEMPTS: Final = 2
+
+#: How many times the grounding check may be asked for one answer. Two, for
+#: exactly the failures and with exactly the output cap a generation gets its
+#: second request for: a response that was not a completion, or a reply cut
+#: off at the output limit — both measured against the real provider, both
+#: with the whole cap spent on reasoning. A verdict, ``supported`` or
+#: ``not_supported``, is never asked for again: it is an answer, not a fault.
+MAX_GROUNDING_CHECK_ATTEMPTS: Final = 2
 
 #: What the deadline is reported as when it ends a request during a provider
 #: call. A fixed word, like the parser's rules.
@@ -187,14 +201,19 @@ class GroundedAnswer:
     first reply was unusable and a second one was asked for, ``0`` when no
     model was called. Diagnostics."""
 
+    grounding_check_attempts: int = 0
+    """How many times the grounding check was asked: ``1`` normally, ``2`` when
+    its first reply was unusable and it was asked again, ``0`` when it was not
+    asked. Diagnostics."""
+
     conversation: Conversation = NO_CONVERSATION
     """The earlier turns the prompt carried, and how many were left out.
     Diagnostics — never evidence, and never part of the HTTP response."""
 
     provider_calls: tuple[ProviderCallRecord, ...] = ()
     """Every call this answer made to the generation provider, in order:
-    each generation attempt, then the grounding check if one was asked.
-    Metadata only — see `rag.telemetry`. Diagnostics."""
+    each generation attempt, then each grounding check attempt if one was
+    asked. Metadata only — see `rag.telemetry`. Diagnostics."""
 
     @property
     def regeneration_cause(self) -> GenerationFailure | None:
@@ -406,6 +425,7 @@ class GroundedAnswerService:
             query.text, draft.answer, citations.cited, progress.calls
         )
         check_seconds = round(time.perf_counter() - check_started, 4)
+        check_attempts = len(progress.calls) - generation_attempts
 
         if verdict is not GroundingVerdict.SUPPORTED:
             # The check read the cited passages and said they do not carry the
@@ -423,6 +443,7 @@ class GroundedAnswerService:
                 generation_attempts=generation_attempts,
                 grounding_check=verdict,
                 grounding_check_seconds=check_seconds,
+                grounding_check_attempts=check_attempts,
                 conversation=earlier,
                 provider_calls=tuple(progress.calls),
             )
@@ -448,6 +469,7 @@ class GroundedAnswerService:
                 grounding_check=verdict,
                 grounding_check_seconds=check_seconds,
                 generation_attempts=generation_attempts,
+                grounding_check_attempts=check_attempts,
                 conversation=earlier,
                 provider_calls=tuple(progress.calls),
             )
@@ -464,9 +486,10 @@ class GroundedAnswerService:
     ) -> GroundedAnswerDraft:
         """Generate a draft, recording every call into *calls*.
 
-        One request normally. A second, identical one only when the failure
-        policy allows it for what went wrong — see `rag.failure_policy` — and
-        never a third. Every other failure is raised on the spot.
+        One request normally. A second one only when the failure policy allows
+        it for what went wrong — see `rag.failure_policy` — and never a third.
+        The second asks the same thing, with the larger output cap when the
+        first stopped at the limit. Every other failure is raised on the spot.
         """
         request = build_generation_request(
             question=question,
@@ -482,11 +505,12 @@ class GroundedAnswerService:
                 requests_made += failed.failure.attempts
                 failure = replace(failed.failure, attempts=requests_made)
                 calls.append(self._observe(self._failed(request, attempt, failed, failure)))
-                if may_regenerate(failure) and attempt < MAX_GENERATION_ATTEMPTS:
+                if may_recover(failure) and attempt < MAX_GENERATION_ATTEMPTS:
                     _logger.warning(
                         "generation regenerated",
                         extra={"reason": failed.reason, **failure.fields()},
                     )
+                    request = self._recovery_request(request, failure)
                     continue
                 _logger.warning(
                     "generation failed", extra={"reason": failed.reason, **failure.fields()}
@@ -527,11 +551,12 @@ class GroundedAnswerService:
                         )
                     )
                 )
-                if may_regenerate(failure) and attempt < MAX_GENERATION_ATTEMPTS:
+                if may_recover(failure) and attempt < MAX_GENERATION_ATTEMPTS:
                     # Nothing of the rejected reply is kept: the next one is read
                     # from scratch, by the same strict parser, and then has to
                     # pass every check this one would have.
                     _logger.warning("generation regenerated", extra=failure.fields())
+                    request = self._recovery_request(request, failure)
                     continue
                 _logger.warning("generation unusable", extra=failure.fields())
                 raise GenerationUnavailableError(failure=failure) from exc
@@ -556,11 +581,14 @@ class GroundedAnswerService:
     ) -> GroundingVerdict:
         """Ask whether *cited* says what *answer* says. See `rag.verification`.
 
-        Asked exactly once. ``supported`` or ``not_supported`` is returned; a
-        reply that is no verdict at all, and a provider that could not be
-        reached, are technical failures and raised — the check said nothing
-        about the passages, so nothing is published and nothing is claimed
-        about the knowledge base either.
+        ``supported`` or ``not_supported`` is returned, and either ends the
+        check. A reply that is no verdict at all, and a provider that could not
+        be reached, are technical failures: asked once more when the failure
+        policy allows it for what went wrong — the same rule, and the same
+        larger output cap, as a regeneration — and raised otherwise, or when
+        the second request fails too. The check then said nothing about the
+        passages, so nothing is published and nothing is claimed about the
+        knowledge base either.
         """
         request = build_grounding_check_request(
             question=question,
@@ -568,49 +596,89 @@ class GroundedAnswerService:
             cited=cited,
             max_output_tokens=self._context_policy.output_reserve_tokens,
         )
-        try:
-            response, elapsed = await self._send(request, ProviderCallType.GROUNDING_CHECK)
-        except _CallFailedError as failed:
-            calls.append(self._observe(self._failed(request, 1, failed, failed.failure)))
-            _logger.warning(
-                "grounding check failed",
-                extra={"reason": failed.reason, **failed.failure.fields()},
-            )
-            raise GenerationUnavailableError(failure=failed.failure) from failed.__cause__
+        requests_made = 0
+        for attempt in range(1, MAX_GROUNDING_CHECK_ATTEMPTS + 1):
+            try:
+                response, elapsed = await self._send(request, ProviderCallType.GROUNDING_CHECK)
+            except _CallFailedError as failed:
+                requests_made += failed.failure.attempts
+                failure = replace(failed.failure, attempts=requests_made)
+                calls.append(self._observe(self._failed(request, attempt, failed, failure)))
+                if may_recover(failure) and attempt < MAX_GROUNDING_CHECK_ATTEMPTS:
+                    _logger.warning(
+                        "grounding check repeated",
+                        extra={"reason": failed.reason, **failure.fields()},
+                    )
+                    request = self._recovery_request(request, failure)
+                    continue
+                _logger.warning(
+                    "grounding check failed",
+                    extra={"reason": failed.reason, **failure.fields()},
+                )
+                raise GenerationUnavailableError(failure=failure) from failed.__cause__
 
-        verdict, rule = read_grounding_check(response.text)
-        if verdict is not GroundingVerdict.UNUSABLE:
+            requests_made += 1
+            verdict, rule = read_grounding_check(response.text)
+            if verdict is not GroundingVerdict.UNUSABLE:
+                calls.append(
+                    self._observe(
+                        self._replied(
+                            request,
+                            ProviderCallType.GROUNDING_CHECK,
+                            attempt,
+                            elapsed,
+                            response,
+                            None,
+                        )
+                    )
+                )
+                return verdict
+
+            failure = classify_unusable_reply(
+                _with_reply_facts(
+                    GenerationFailure(
+                        category=GenerationFailureCategory.UNPARSEABLE_OUTPUT,
+                        detail=rule or "unspecified",
+                        step=ProviderCallType.GROUNDING_CHECK,
+                        attempts=requests_made,
+                    ),
+                    response,
+                ),
+                finish_reason=response.finish_reason,
+            )
             calls.append(
                 self._observe(
                     self._replied(
-                        request, ProviderCallType.GROUNDING_CHECK, 1, elapsed, response, None
+                        request,
+                        ProviderCallType.GROUNDING_CHECK,
+                        attempt,
+                        elapsed,
+                        response,
+                        failure,
                     )
                 )
             )
-            return verdict
+            # Nothing of the reply is logged but which rule it broke, its size and
+            # how it ended.
+            if may_recover(failure) and attempt < MAX_GROUNDING_CHECK_ATTEMPTS:
+                _logger.warning("grounding check repeated", extra=failure.fields())
+                request = self._recovery_request(request, failure)
+                continue
+            _logger.warning("grounding check unusable", extra=failure.fields())
+            raise GenerationUnavailableError(failure=failure)
 
-        failure = classify_unusable_reply(
-            _with_reply_facts(
-                GenerationFailure(
-                    category=GenerationFailureCategory.UNPARSEABLE_OUTPUT,
-                    detail=rule or "unspecified",
-                    step=ProviderCallType.GROUNDING_CHECK,
-                ),
-                response,
-            ),
-            finish_reason=response.finish_reason,
+        raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
+
+    def _recovery_request(
+        self, request: GenerationRequest, failure: GenerationFailure
+    ) -> GenerationRequest:
+        """The second request of a step: the same messages, and the larger
+        output cap when the first stopped at the limit. Nothing else changes."""
+        if not needs_larger_output(failure):
+            return request
+        return request.model_copy(
+            update={"max_output_tokens": self._context_policy.recovery_output_tokens}
         )
-        calls.append(
-            self._observe(
-                self._replied(
-                    request, ProviderCallType.GROUNDING_CHECK, 1, elapsed, response, failure
-                )
-            )
-        )
-        # Nothing of the reply is logged but which rule it broke, its size and
-        # how it ended.
-        _logger.warning("grounding check unusable", extra=failure.fields())
-        raise GenerationUnavailableError(failure=failure)
 
     async def _send(
         self, request: GenerationRequest, step: ProviderCallType
@@ -699,6 +767,7 @@ class GroundedAnswerService:
             elapsed_seconds=elapsed,
             response=response,
             failure=failure,
+            max_output_tokens=request.max_output_tokens,
         )
 
     def _failed(
@@ -715,6 +784,7 @@ class GroundedAnswerService:
             response_format=request.response_format,
             elapsed_seconds=failed.elapsed_seconds,
             failure=failure,
+            max_output_tokens=request.max_output_tokens,
         )
 
     @staticmethod
@@ -742,6 +812,7 @@ class GroundedAnswerService:
         grounding_check: GroundingVerdict | None = None,
         grounding_check_seconds: float = 0.0,
         generation_attempts: int = 0,
+        grounding_check_attempts: int = 0,
         conversation: Conversation = NO_CONVERSATION,
         provider_calls: tuple[ProviderCallRecord, ...] = (),
     ) -> GroundedAnswer:
@@ -760,6 +831,7 @@ class GroundedAnswerService:
                 grounding_check=grounding_check,
                 grounding_check_seconds=grounding_check_seconds,
                 generation_attempts=generation_attempts,
+                grounding_check_attempts=grounding_check_attempts,
                 conversation=conversation,
                 provider_calls=provider_calls,
             )
@@ -796,6 +868,7 @@ class GroundedAnswerService:
                 "retrieval_seconds": answer.retrieval.duration_seconds,
                 "generation_seconds": answer.generation_seconds,
                 "generation_attempts": answer.generation_attempts,
+                "grounding_check_attempts": answer.grounding_check_attempts,
                 "provider_calls": len(answer.provider_calls),
                 "regeneration_cause": (
                     answer.regeneration_cause.detail if answer.regeneration_cause else None

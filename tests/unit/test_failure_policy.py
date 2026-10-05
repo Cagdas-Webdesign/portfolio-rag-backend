@@ -38,12 +38,13 @@ from portfolio_rag.rag.failure_policy import (
     Terminal,
     TransportRetry,
     classify_unusable_reply,
-    may_regenerate,
+    may_recover,
     policy_for,
 )
 from portfolio_rag.rag.service import (
     DEADLINE_EXCEEDED,
     MAX_GENERATION_ATTEMPTS,
+    MAX_GROUNDING_CHECK_ATTEMPTS,
     AnswerOutcome,
     GroundedAnswerService,
 )
@@ -78,9 +79,7 @@ def test_every_failure_is_a_technical_error_and_an_availability_finding():
 
 
 def test_recovery_is_allowed_only_where_a_fresh_sample_is_the_remedy():
-    recoverable = {
-        category for category, policy in FAILURE_POLICY.items() if policy.generation_recovery
-    }
+    recoverable = {category for category, policy in FAILURE_POLICY.items() if policy.recovery}
     assert recoverable == {C.MALFORMED_RESPONSE, C.OUTPUT_TRUNCATED}
 
 
@@ -93,12 +92,13 @@ def test_transport_retries_belong_to_the_transient_categories_only():
     assert bounded == {C.TIMEOUT, C.RETRYABLE_PROVIDER_ERROR}
 
 
-def test_a_grounding_check_is_never_regenerated_whatever_its_category():
+def test_both_steps_recover_under_the_same_rule():
     for category in GenerationFailureCategory:
-        failure = GenerationFailure(
-            category=category, detail="x", step=ProviderCallType.GROUNDING_CHECK
-        )
-        assert not may_regenerate(failure)
+        recovers = {
+            may_recover(GenerationFailure(category=category, detail="x", step=step))
+            for step in ProviderCallType
+        }
+        assert recovers == {policy_for(GenerationFailure(category, "x")).recovery}
 
 
 def test_every_evaluation_failure_has_exactly_one_class():
@@ -197,6 +197,8 @@ def _assert_policy_obeyed(
     assert error.retrieval is not None, "what was retrieved travels with the failure"
     generations = [c for c in error.provider_calls if c.call_type is ProviderCallType.GENERATION]
     assert len(generations) <= MAX_GENERATION_ATTEMPTS
+    checks = [c for c in error.provider_calls if c.call_type is ProviderCallType.GROUNDING_CHECK]
+    assert len(checks) <= MAX_GROUNDING_CHECK_ATTEMPTS
     return failure
 
 
@@ -267,7 +269,7 @@ def test_generation_output_failures_follow_their_row(
     assert len(seen) == generations, "recovery exactly where the row allows it, never a third"
     assert failure.category is category
     assert failure.detail == detail
-    assert policy_for(failure).generation_recovery is (generations == 2)
+    assert policy_for(failure).recovery is (generations == 2)
     if reply is None:
         assert failure.finish_reason == "stop", "a malformed response keeps what it reported"
     else:

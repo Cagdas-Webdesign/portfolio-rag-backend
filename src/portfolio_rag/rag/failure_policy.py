@@ -2,22 +2,22 @@
 
 One row per :class:`~portfolio_rag.rag.errors.GenerationFailureCategory`, and
 one place that says, for each: who detects it, whether a transport retry is
-allowed beneath the port, whether the answer may be generated once more, and
-what the request ends as. :mod:`portfolio_rag.rag.service` reads its recovery
-decision from here; the adapters' transport behaviour is what the
-``transport_retry`` column describes, and the fault-injection tests prove each
-adapter does exactly that. The failure matrix test asserts that every category
-has its row — a category without one is a build failure, not a gap found in
-production.
+allowed beneath the port, whether the step that failed — the generation or the
+grounding check — may be asked once more, and what the request ends as.
+:mod:`portfolio_rag.rag.service` reads its recovery decision from here; the
+adapters' transport behaviour is what the ``transport_retry`` column
+describes, and the fault-injection tests prove each adapter does exactly that.
+The failure matrix test asserts that every category has its row — a category
+without one is a build failure, not a gap found in production.
 
-**Every row ends as a technical error.** That is an invariant, not an
-oversight: a failure here means the provider did not deliver something the
-pipeline could judge, so it is never a statement about the knowledge base.
-The outcomes that *are* such statements — the model declining, a citation that
-does not resolve, a grounding check that reads ``not_supported`` — are not
-failures at all; they end as :attr:`AnswerOutcome.NOT_GROUNDED` through the
-answer path, and are quality findings. One root cause, one terminal outcome,
-one gate.
+**Every row ends as a technical error** — after its one recovery, where it has
+one. That is an invariant, not an oversight: a failure here means the provider
+did not deliver something the pipeline could judge, so it is never a statement
+about the knowledge base. The outcomes that *are* such statements — the model
+declining, a citation that does not resolve, a grounding check that reads
+``not_supported`` — are not failures at all; they end as
+:attr:`AnswerOutcome.NOT_GROUNDED` through the answer path, and are quality
+findings. One root cause, one terminal outcome, one gate.
 
 **Classification precedence** (:func:`classify_unusable_reply` and
 :func:`~portfolio_rag.rag.errors.provider_failure`), strongest evidence first:
@@ -28,6 +28,15 @@ one gate.
 3. A rejected reply the provider says it cut off at the output limit is
    :attr:`OUTPUT_TRUNCATED`; the parser's rule stays as the detail.
 4. Any other rejected reply is :attr:`UNPARSEABLE_OUTPUT`.
+
+**A recovery is one more request of the same step, never a third.** Both
+steps allow it for the same two categories: a response that was not a
+completion, and a reply cut off at the output limit. When the provider said it
+stopped at the limit (``finish_reason`` ``length``), the second request may
+spend more output — :func:`needs_larger_output`; the first request of a step
+never does. Measured against `@cf/openai/gpt-oss-120b`, a reasoning model
+whose reasoning counts against the cap: both kinds of failure arrive with
+``length`` and the whole cap spent, the first with no text at all.
 
 A reply made mostly of whitespace is not a category. It is visible in the
 telemetry (``reply_visible_characters``) and gets the reaction its category
@@ -42,11 +51,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final
 
-from portfolio_rag.rag.errors import (
-    GenerationFailure,
-    GenerationFailureCategory,
-    ProviderCallType,
-)
+from portfolio_rag.rag.errors import GenerationFailure, GenerationFailureCategory
 
 #: What a provider says when it stopped because the output limit was reached.
 #: The de-facto name across chat completion APIs.
@@ -94,9 +99,9 @@ class FailurePolicy:
 
     owner: Owner
     transport_retry: TransportRetry
-    generation_recovery: bool
-    """Whether the answer may be generated once more — never a third time,
-    and never for a grounding check."""
+    recovery: bool
+    """Whether the step that failed may be asked once more — the answer
+    generated again, or the grounding check repeated. Never a third time."""
 
     terminal: Terminal = Terminal.TECHNICAL_ERROR
     gate: Gate = Gate.AVAILABILITY
@@ -110,7 +115,8 @@ FAILURE_POLICY: Final = MappingProxyType(
         _C.RETRYABLE_PROVIDER_ERROR: FailurePolicy(Owner.ADAPTER, TransportRetry.BOUNDED, False),
         _C.PROVIDER_STATUS: FailurePolicy(Owner.ADAPTER, TransportRetry.NONE, False),
         # The provider was reached and its response was not a completion.
-        # Nothing was generated, so a fresh sample is the remedy.
+        # Nothing was generated, so a fresh sample is the remedy — for a
+        # generation and for a grounding check alike.
         _C.MALFORMED_RESPONSE: FailurePolicy(Owner.ADAPTER, TransportRetry.NONE, True),
         # Cut off before the object closed: a property of the sample, measured
         # against the same model answering the same question in full.
@@ -127,13 +133,24 @@ def policy_for(failure: GenerationFailure) -> FailurePolicy:
     return FAILURE_POLICY[failure.category]
 
 
-def may_regenerate(failure: GenerationFailure) -> bool:
-    """Whether *failure* allows the answer to be generated once more.
+def may_recover(failure: GenerationFailure) -> bool:
+    """Whether *failure* allows its step to be asked once more.
 
-    Only for the generation step: a grounding check is asked once, and an
-    unusable verdict is a technical error, not a reason to ask again.
+    The same rule for both steps. A grounding check that delivered a verdict —
+    ``supported`` or ``not_supported`` — never gets here: it is no failure. The
+    caller enforces "once": a second failure of the same step is terminal.
     """
-    return failure.step is ProviderCallType.GENERATION and policy_for(failure).generation_recovery
+    return policy_for(failure).recovery
+
+
+def needs_larger_output(failure: GenerationFailure) -> bool:
+    """Whether the recovery of *failure* should get the larger output cap.
+
+    Only when the provider said it stopped at the output limit: then the same
+    cap is the likeliest reason for the same failure. Any other recoverable
+    failure is asked again as it was.
+    """
+    return failure.finish_reason == TRUNCATED_FINISH_REASON
 
 
 def classify_unusable_reply(

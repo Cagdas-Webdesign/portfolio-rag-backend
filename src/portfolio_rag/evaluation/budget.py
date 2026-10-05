@@ -20,6 +20,13 @@ the reserve is not started; a small smoke run is how the data gets measured.
 **The reserve is the rule, the 50 % is a target.** A run whose forecast keeps
 the minimum production reserve may start; one above half the daily budget
 needs an explicit go-ahead; one that would eat into the reserve does not start.
+
+**One rule an operator can overrule, and only that one.** The minimum reserve
+is this tool's own margin on top of the provider's allocation. For one
+deliberate run it can be set aside by name (``--override-budget-reserve``):
+the run may then spend into the reserve, never past the nominal daily budget,
+and the override is written into the run's export and ledger entry. The
+nominal budget, the excessive-run limit and every other guard stay as they are.
 """
 
 from __future__ import annotations
@@ -106,16 +113,21 @@ def call_neurons(call: ProviderCallRecord, profile: CostProfile) -> float | None
     return profile.estimate(call.input_tokens, call.output_tokens)
 
 
-def structural_call_bound(profile: CostProfile, policy: ContextPolicy) -> float:
+def structural_call_bound(
+    profile: CostProfile, policy: ContextPolicy, *, output_tokens: int | None = None
+) -> float:
     """The most one call can cost under the limits the pipeline enforces.
 
     The prompt budget less the output reserve is the largest input the context
     builder will compose — measured with a deliberately pessimistic token
     estimate, so real counts stay under it — and the output reserve is the
-    ``max_tokens`` the provider is asked to honour.
+    ``max_tokens`` the provider is asked to honour. *output_tokens* is the cap
+    a specific call requested, when it is known — a recovery after a reply
+    stopped at the limit asks for more than the reserve.
     """
     return profile.estimate(
-        policy.max_prompt_tokens - policy.output_reserve_tokens, policy.output_reserve_tokens
+        policy.max_prompt_tokens - policy.output_reserve_tokens,
+        output_tokens if output_tokens is not None else policy.output_reserve_tokens,
     )
 
 
@@ -246,8 +258,12 @@ def forecast_run(
 
     if confidence is Confidence.LOW:
         per_call = structural_call_bound(profile, policy)
+        # A regeneration may ask for the larger recovery cap: costed at it.
+        per_recovery = structural_call_bound(
+            profile, policy, output_tokens=policy.recovery_output_tokens
+        )
         generations = 1 + _FALLBACK_REGENERATION_RATE
-        per_question = (generations + 1) * per_call
+        per_question = 2 * per_call + _FALLBACK_REGENERATION_RATE * per_recovery
         return Forecast(
             questions=questions,
             generation_calls=questions * generations,
@@ -263,7 +279,7 @@ def forecast_run(
                 "at the context budget and output limit"
             ),
             usage_coverage=coverage,
-            generation_neurons=questions * generations * per_call,
+            generation_neurons=questions * (per_call + _FALLBACK_REGENERATION_RATE * per_recovery),
             grounding_neurons=questions * per_call,
             profile_sources=len(history.sources),
             profile_age_days=age,
@@ -271,26 +287,27 @@ def forecast_run(
         )
 
     generations = len(by_type[ProviderCallType.GENERATION]) / max(history.questions, 1)
+    checks = _checks_per_answer(by_type[ProviderCallType.GROUNDING_CHECK])
     generation_in, generation_out = _per_call(measured[ProviderCallType.GENERATION])
     check_in, check_out = _per_call(measured[ProviderCallType.GROUNDING_CHECK])
     margin = 1 + _MARGIN[confidence]
     generation_cost = margin * generations * profile.estimate(generation_in, generation_out)
-    check_cost = margin * profile.estimate(check_in, check_out)
+    check_cost = margin * checks * profile.estimate(check_in, check_out)
     per_question = generation_cost + check_cost
     return Forecast(
         questions=questions,
         generation_calls=questions * generations,
-        grounding_calls=float(questions),
+        grounding_calls=questions * checks,
         regeneration_calls=questions * max(generations - 1, 0.0),
-        input_tokens=questions * margin * (generations * generation_in + check_in),
-        output_tokens=questions * margin * (generations * generation_out + check_out),
+        input_tokens=questions * margin * (generations * generation_in + checks * check_in),
+        output_tokens=questions * margin * (generations * generation_out + checks * check_out),
         neurons=questions * per_question,
         per_question_neurons=per_question,
         confidence=confidence,
         method=(
             f"max(p75, p90-capped mean) tokens per call from {len(history.calls)} calls in "
             f"{len(history.sources)} run(s), observed generations per question, a check for "
-            f"every question, +{_MARGIN[confidence]:.0%}"
+            f"every question at the observed checks per answer, +{_MARGIN[confidence]:.0%}"
         ),
         usage_coverage=coverage,
         generation_neurons=questions * generation_cost,
@@ -299,6 +316,19 @@ def forecast_run(
         profile_age_days=age,
         compatibility=compatibility,
     )
+
+
+def _checks_per_answer(checks: Sequence[ProviderCallRecord]) -> float:
+    """Grounding checks per checked answer: 1, plus the share asked again.
+
+    A repeated check is the second record of its answer (``attempt`` 2), so
+    the rate is read from the records alone. History from before a check
+    could be repeated has none, and gives exactly 1.
+    """
+    first = sum(1 for call in checks if call.attempt == 1)
+    if not first:
+        return 1.0
+    return 1.0 + sum(1 for call in checks if call.attempt > 1) / first
 
 
 def medium_confidence_gap(history: UsageHistory) -> str:
@@ -418,9 +448,18 @@ class BudgetPolicy:
         """What may be spent in a day before the reserve is touched."""
         return self.daily_budget - self.minimum_reserve
 
+    def ceiling(self, *, reserve_overridden: bool) -> float:
+        """What a run may bring today's spend up to: the reserve's edge, or —
+        with the reserve overridden for this run — the nominal budget itself."""
+        return self.daily_budget if reserve_overridden else self.spendable
+
 
 def budget_zone(
-    forecast_neurons: float, known_consumption: float, policy: BudgetPolicy
+    forecast_neurons: float,
+    known_consumption: float,
+    policy: BudgetPolicy,
+    *,
+    reserve_overridden: bool = False,
 ) -> BudgetZone:
     """Where a run with this forecast stands today.
 
@@ -428,9 +467,13 @@ def budget_zone(
     than 70 % of the daily budget; YELLOW above the target share; GREEN
     otherwise. A forecast exactly at a boundary is on the cheaper side of it,
     and a reserve kept exactly is kept.
+
+    With *reserve_overridden*, the reserve is not required to survive — the
+    nominal daily budget is: RED when today's known spend plus the forecast
+    would exceed it. Nothing else changes.
     """
-    remaining = policy.daily_budget - known_consumption - forecast_neurons
-    if remaining < policy.minimum_reserve:
+    total = known_consumption + forecast_neurons
+    if total > policy.ceiling(reserve_overridden=reserve_overridden):
         return BudgetZone.RED
     if cost_band(forecast_neurons, policy.daily_budget) is CostBand.EXCESSIVE:
         return BudgetZone.RED
@@ -477,6 +520,10 @@ class LedgerEntry:
 
     release_source_identity: str | None = None
     """The release candidate the run tested — its release-relevant content.
+    ``None`` for entries written before it was recorded."""
+
+    budget_override_used: bool | None = None
+    """Whether the minimum reserve was manually overridden for this run.
     ``None`` for entries written before it was recorded."""
 
 
@@ -540,6 +587,6 @@ def spent(
         cost = call_neurons(call, profile)
         if cost is None:
             unreported += 1
-            cost = structural_call_bound(profile, policy)
+            cost = structural_call_bound(profile, policy, output_tokens=call.max_output_tokens)
         total += cost
     return total, unreported

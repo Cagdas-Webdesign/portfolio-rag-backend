@@ -57,6 +57,7 @@ from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
 from portfolio_rag.ports.llm import ResponseFormat
 from portfolio_rag.rag.errors import GenerationFailure, GenerationFailureCategory
 from portfolio_rag.rag.policy import ContextPolicy
+from portfolio_rag.rag.service import MAX_GENERATION_ATTEMPTS, MAX_GROUNDING_CHECK_ATTEMPTS
 from portfolio_rag.rag.telemetry import CallResult, ProviderCallRecord, ProviderCallType
 from tests.doubles import ScriptedLLMProvider, ScriptedReply, grounded
 from tests.e2e_stack import ANSWERABLE, dataset_of, e2e_service, label_of, run_metadata
@@ -135,10 +136,14 @@ def test_percentile_is_a_value_that_occurred():
 def test_without_measured_usage_the_forecast_is_the_structural_bound():
     forecast = forecast_run(49, EMPTY, PROFILE)
 
-    bound = structural_call_bound(PROFILE, ContextPolicy())
+    policy = ContextPolicy()
+    bound = structural_call_bound(PROFILE, policy)
+    # A regeneration may ask for the recovery cap, and is costed at it.
+    recovery = structural_call_bound(PROFILE, policy, output_tokens=policy.recovery_output_tokens)
+    assert recovery > bound
     assert forecast.confidence is Confidence.LOW
-    assert forecast.per_question_neurons == pytest.approx(2.2 * bound)
-    assert forecast.neurons == pytest.approx(49 * 2.2 * bound)
+    assert forecast.per_question_neurons == pytest.approx(2 * bound + 0.2 * recovery)
+    assert forecast.neurons == pytest.approx(49 * (2 * bound + 0.2 * recovery))
     assert forecast.input_tokens is None, "no measured tokens are claimed"
 
 
@@ -379,7 +384,9 @@ def test_a_provider_without_neuron_rates_is_not_budgeted():
 
 
 def test_the_bound_on_calls_is_the_failure_policy_ceiling():
-    assert plan().max_port_calls == 3 * 49
+    """Two generations and two grounding checks per question, never more."""
+    assert MAX_GENERATION_ATTEMPTS == MAX_GROUNDING_CHECK_ATTEMPTS == 2
+    assert plan().max_port_calls == 4 * 49
 
 
 # --- history from earlier exports -----------------------------------------------------------

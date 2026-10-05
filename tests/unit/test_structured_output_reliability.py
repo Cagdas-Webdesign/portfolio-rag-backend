@@ -271,7 +271,8 @@ def test_an_unusable_check_is_a_technical_failure_that_says_which_rule_it_broke(
     tokens = LIMIT if finish == "length" else 12
     error, seen = failure_with(completion(VALID), completion(reply, finish, tokens))
 
-    assert checks(seen) == 1, "a check is asked once, whatever it replies"
+    # Asked once more only when it stopped at the output limit; never a third time.
+    assert checks(seen) == (2 if finish == "length" else 1)
     assert "FastAPI" not in str(error)
     failure = error.failure
     assert failure is not None

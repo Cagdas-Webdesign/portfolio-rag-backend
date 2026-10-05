@@ -59,7 +59,12 @@ from portfolio_rag.rag.language import INSUFFICIENT_KNOWLEDGE_ANSWERS
 from portfolio_rag.rag.policy import ContextPolicy
 from portfolio_rag.rag.prompt import GROUNDED_RESPONSE_FORMAT
 from portfolio_rag.rag.retrieval import RetrievalOutcome
-from portfolio_rag.rag.service import MAX_GENERATION_ATTEMPTS, AnswerOutcome, GroundedAnswer
+from portfolio_rag.rag.service import (
+    MAX_GENERATION_ATTEMPTS,
+    MAX_GROUNDING_CHECK_ATTEMPTS,
+    AnswerOutcome,
+    GroundedAnswer,
+)
 from portfolio_rag.rag.telemetry import CallResult, ProviderCallRecord, ProviderCallType
 from portfolio_rag.rag.verification import (
     GROUNDING_CHECK_RESPONSE_FORMAT,
@@ -235,6 +240,10 @@ class E2ERecord:
     """How many times the answer was generated. ``2`` means the first reply
     was unusable and the question was asked again."""
 
+    grounding_check_attempts: int = 0
+    """How many times the grounding check was asked. ``2`` means its first
+    reply was unusable and it was asked again; ``0`` that it was not asked."""
+
     provider_calls: tuple[ProviderCallRecord, ...] = ()
     """Every call the question made to the generation provider, in order —
     for a question that errored, up to and including the failing one.
@@ -319,6 +328,7 @@ def score_answer(
         grounding_check=answer.grounding_check,
         grounding_check_seconds=answer.grounding_check_seconds,
         generation_attempts=answer.generation_attempts,
+        grounding_check_attempts=answer.grounding_check_attempts,
         provider_calls=answer.provider_calls,
     )
 
@@ -374,6 +384,9 @@ def errored_record(
         failures=tuple(failures),
         generation_attempts=sum(
             1 for call in provider_calls if call.call_type is ProviderCallType.GENERATION
+        ),
+        grounding_check_attempts=sum(
+            1 for call in provider_calls if call.call_type is ProviderCallType.GROUNDING_CHECK
         ),
         provider_calls=provider_calls,
     )
@@ -559,10 +572,14 @@ def export_e2e(
                 "grounding_check_response_format": GROUNDING_CHECK_RESPONSE_FORMAT.value,
                 "max_prompt_tokens": metadata.context_policy.max_prompt_tokens,
                 "output_reserve_tokens": metadata.context_policy.output_reserve_tokens,
-                # The answering service requests at most the output reserve.
+                # A first request asks for at most the output reserve.
                 "max_output_tokens": metadata.context_policy.output_reserve_tokens,
+                # A recovery after a reply stopped at the limit asks for this.
+                "recovery_output_tokens": metadata.context_policy.recovery_output_tokens,
                 # Generations per question: the first and its one regeneration.
                 "generation_attempt_limit": MAX_GENERATION_ATTEMPTS,
+                # Grounding checks per answer: the first and its one recovery.
+                "grounding_check_attempt_limit": MAX_GROUNDING_CHECK_ATTEMPTS,
                 "transport_attempts": metadata.transport_attempts,
                 "delay_seconds": metadata.generation_delay_seconds,
             },
@@ -781,6 +798,7 @@ def _answer(record: E2ERecord) -> dict[str, Any]:
         },
         "generation_seconds": record.generation_seconds,
         "generation_attempts": record.generation_attempts,
+        "grounding_check_attempts": record.grounding_check_attempts,
         "provider_calls": [call.fields() for call in record.provider_calls],
         "grounding_check_seconds": record.grounding_check_seconds,
         "duration_seconds": record.duration_seconds,

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1019,6 +1020,78 @@ def test_yellow_starts_only_when_confirmed(
     assert refused == EXIT_INVALID and "--allow-yellow" in err
     assert confirmed == EXIT_OK
     assert "Preflight only: no provider was called." in out_confirmed
+
+
+def _spent_today(ledger: Path, neurons: float) -> None:
+    """A smoke run recorded in the ledger today, which the preflight charges against."""
+    line = {
+        "date_utc": datetime.now(UTC).date().isoformat(),
+        "run_id": "s" * 32,
+        "tier": "smoke",
+        "status": "complete",
+        "calls": 4,
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "estimated_neurons": neurons,
+        "usage_coverage": 1.0,
+        "artifact": None,
+        "smoke_passed": True,
+    }
+    ledger.write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+
+def test_the_reserve_override_belongs_to_a_tiered_run(capsys: pytest.CaptureFixture[str]):
+    code, _, err = _run(capsys, "--retrieval-only", "--override-budget-reserve")
+
+    assert code == EXIT_INVALID
+    assert "--override-budget-reserve belongs to an --e2e --tier run" in err
+
+
+def test_the_reserve_override_starts_a_run_inside_the_nominal_budget_and_says_so(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, workers_ai_names: Path
+):
+    # The same history as above: 24 questions above half the budget, inside it.
+    _measured_history(workers_ai_names, generation_tokens=(4000, 450))
+    _spent_today(tmp_path / "ledger.jsonl", 2_000.0)
+    target = str(tmp_path / "e2e.json")
+
+    refused, out, err = _run_acceptance(capsys, "--allow-yellow", "--output", target)
+    started, out_override, err_override = _run_acceptance(
+        capsys,
+        "--allow-yellow",
+        "--override-budget-reserve",
+        "--preflight-only",
+        "--output",
+        target,
+    )
+
+    assert refused == EXIT_INVALID
+    assert "would not leave the minimum reserve" in err
+    assert "WARNING" not in out
+    assert started == EXIT_OK
+    assert "WARNING: minimum reserve manually overridden for this run" in out_override
+    assert "WARNING: minimum reserve manually overridden for this run" in err_override
+    assert re.search(r"budget override\s+minimum_reserve", out_override)
+    assert "Preflight only: no provider was called." in out_override
+
+
+def test_the_reserve_override_never_passes_the_nominal_daily_budget(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, workers_ai_names: Path
+):
+    _measured_history(workers_ai_names, generation_tokens=(4000, 450))
+    _spent_today(tmp_path / "ledger.jsonl", 9_000.0)
+
+    code, _, err = _run_acceptance(
+        capsys,
+        "--allow-yellow",
+        "--override-budget-reserve",
+        "--preflight-only",
+        "--output",
+        str(tmp_path / "e2e.json"),
+    )
+
+    assert code == EXIT_INVALID
+    assert "exceed the nominal daily budget" in err
 
 
 def test_an_acceptance_run_never_takes_question_ids(

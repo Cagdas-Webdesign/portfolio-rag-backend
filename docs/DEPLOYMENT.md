@@ -274,8 +274,9 @@ Cloud Run's default request timeout is **300 seconds**. Nothing in this reposito
 service configuration, set on the Cloud Run service itself.
 
 **What one chat request can cost in time.** One query embedding, one Vectorize query, and at most
-**three calls to the generation provider**: the answer, one regeneration when the failure policy
-allows it (`rag/failure_policy.py`), and the grounding check. Each provider call may be retried by
+**four calls to the generation provider**: the answer, one regeneration when the failure policy
+allows it (`rag/failure_policy.py`), the grounding check, and one repeated check under the same
+rule. Each provider call may be retried by
 its adapter beneath the port — up to three requests on the wire, `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS`
 (default 30s) each. Unbounded, that adds up to several minutes; an earlier version of this section
 counted two calls and 60–70 seconds, which stopped being true when the grounding check and the

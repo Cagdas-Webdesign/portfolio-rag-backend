@@ -81,6 +81,24 @@ DEFAULT_MAX_PROMPT_TOKENS: Final = 6000
 #: disagree.
 DEFAULT_OUTPUT_RESERVE_TOKENS: Final = 800
 
+#: The output cap of a recovery attempt — the one second request a step may
+#: make — when the first reply stopped at the output limit. Never the cap of a
+#: first attempt: the ordinary request stays at the reserve and costs what it
+#: did.
+#:
+#: **1500, by measurement.** `@cf/openai/gpt-oss-120b` reasons before it
+#: answers, and the reasoning counts against the cap: of 118 calls with
+#: reported usage in `evaluation/results/` (all at 800), the parsed ones used
+#: 116 to 786 tokens for replies of a few hundred characters, and four stopped at
+#: exactly 800 with no or a cut-off reply — two generations, two grounding
+#: checks. The share of calls reaching *n* tokens halves roughly every 95
+#: tokens (≥ 500: 30.5 %, ≥ 600: 14.4 %, ≥ 700: 6.8 %, ≥ 800: 3.4 %). Extended
+#: past 800 — an extrapolation, not an observation — a reply that already ran
+#: past 800 runs past 1200 about one time in twenty, past 1500 about one in
+#: 170, past 1600 about one in 340. 1500 is the smallest round cap that brings
+#: a second failure under one percent.
+DEFAULT_RECOVERY_OUTPUT_TOKENS: Final = 1500
+
 
 class RetrievalPolicy(BaseModel):
     """How many candidates to consider, and how close is close enough."""
@@ -127,6 +145,14 @@ class ContextPolicy(BaseModel):
         gt=0,
         description="Tokens held back for the answer, and the cap requested from the provider.",
     )
+    recovery_output_tokens: int = Field(
+        default=DEFAULT_RECOVERY_OUTPUT_TOKENS,
+        gt=0,
+        description=(
+            "The cap of a recovery attempt after a reply stopped at the output limit. "
+            "Never used for a first attempt."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_budget_leaves_room(self) -> ContextPolicy:
@@ -135,12 +161,18 @@ class ContextPolicy(BaseModel):
                 f"output_reserve_tokens ({self.output_reserve_tokens}) must be smaller "
                 f"than max_prompt_tokens ({self.max_prompt_tokens})"
             )
+        if self.recovery_output_tokens < self.output_reserve_tokens:
+            raise ValueError(
+                f"recovery_output_tokens ({self.recovery_output_tokens}) must not be smaller "
+                f"than output_reserve_tokens ({self.output_reserve_tokens})"
+            )
         return self
 
     def describe(self) -> tuple[tuple[str, str], ...]:
         return (
             ("max prompt tokens", str(self.max_prompt_tokens)),
             ("output reserve", str(self.output_reserve_tokens)),
+            ("recovery output limit", str(self.recovery_output_tokens)),
         )
 
 

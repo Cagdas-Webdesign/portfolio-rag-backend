@@ -60,8 +60,8 @@ class ProviderCallRecord:
 
     call_type: ProviderCallType
     attempt: int
-    """1 for the first call of its type in this answer; 2 for a regeneration.
-    A grounding check is always 1."""
+    """1 for the first call of its type in this answer; 2 for its one
+    recovery — a regeneration, or a repeated grounding check."""
 
     model: str
     response_format: ResponseFormat
@@ -73,6 +73,11 @@ class ProviderCallRecord:
     inference latency, and must not be read as one."""
 
     result: CallResult
+    max_output_tokens: int | None = None
+    """The output cap this call requested: the reserve for a first attempt,
+    the larger recovery cap for a recovery after a reply stopped at the limit.
+    ``None`` when the request set none."""
+
     finish_reason: str | None = None
     input_tokens: int | None = None
     """As the provider reported it. ``None`` when it reported nothing — never
@@ -92,6 +97,11 @@ class ProviderCallRecord:
         return self.call_type is ProviderCallType.GENERATION and self.attempt > 1
 
     @property
+    def is_recovery(self) -> bool:
+        """The second call of its step: a regeneration or a repeated check."""
+        return self.attempt > 1
+
+    @property
     def usage_reported(self) -> bool:
         return self.input_tokens is not None and self.output_tokens is not None
 
@@ -101,10 +111,12 @@ class ProviderCallRecord:
             "call_type": self.call_type.value,
             "attempt": self.attempt,
             "regeneration": self.is_regeneration,
+            "recovery": self.is_recovery,
             "model": self.model,
             "response_format": self.response_format.value,
             "elapsed_seconds": self.elapsed_seconds,
             "result": self.result.value,
+            "max_output_tokens": self.max_output_tokens,
             "failure_category": self.failure.category.value if self.failure else None,
             "failure_detail": self.failure.detail if self.failure else None,
             "finish_reason": self.finish_reason,
@@ -124,6 +136,7 @@ def replied_call(
     elapsed_seconds: float,
     response: GenerationResponse,
     failure: GenerationFailure | None,
+    max_output_tokens: int | None = None,
 ) -> ProviderCallRecord:
     """The record of a call that returned a reply, usable or not."""
     usage = response.usage
@@ -134,6 +147,7 @@ def replied_call(
         response_format=response_format,
         elapsed_seconds=elapsed_seconds,
         result=CallResult.PARSED if failure is None else CallResult.UNUSABLE_REPLY,
+        max_output_tokens=max_output_tokens,
         finish_reason=response.finish_reason,
         input_tokens=usage.input_tokens if usage else None,
         output_tokens=usage.output_tokens if usage else None,
@@ -151,6 +165,7 @@ def failed_call(
     response_format: ResponseFormat,
     elapsed_seconds: float,
     failure: GenerationFailure,
+    max_output_tokens: int | None = None,
 ) -> ProviderCallRecord:
     """The record of a call that returned no reply at all.
 
@@ -164,6 +179,7 @@ def failed_call(
         response_format=response_format,
         elapsed_seconds=elapsed_seconds,
         result=CallResult.PROVIDER_ERROR,
+        max_output_tokens=max_output_tokens,
         finish_reason=failure.finish_reason,
         input_tokens=failure.input_tokens,
         output_tokens=failure.output_tokens,

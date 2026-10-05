@@ -299,7 +299,9 @@ def test_the_export_names_its_run_and_every_question():
         "max_prompt_tokens": ContextPolicy().max_prompt_tokens,
         "output_reserve_tokens": ContextPolicy().output_reserve_tokens,
         "max_output_tokens": ContextPolicy().output_reserve_tokens,
+        "recovery_output_tokens": ContextPolicy().recovery_output_tokens,
         "generation_attempt_limit": 2,
+        "grounding_check_attempt_limit": 2,
         "transport_attempts": None,
         "delay_seconds": 8.0,
     }
