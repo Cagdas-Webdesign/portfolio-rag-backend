@@ -11,6 +11,6 @@ __all__ = ["SERVICE_NAME", "__version__"]
 #: (``[tool.hatch.version]`` in ``pyproject.toml``), ``/health`` and OpenAPI
 #: default to it, and every evaluation export records it as
 #: ``project_version``. A release tag is ``v`` + this value, set by hand.
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 SERVICE_NAME = "portfolio-rag-assistant"

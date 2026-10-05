@@ -28,7 +28,7 @@ SUITE = EvaluationSuite.RELEASE_ACCEPTANCE
 #: The extended validation dataset, byte for byte. Selecting a suite must not
 #: have changed a question, its category or its ground truth; changing the
 #: dataset on purpose means updating this deliberately.
-EXTENDED_SHA256 = "54afed0b6798c7ac380373cfdace6cc99c0270077504d1fc2e0a793460a8f280"
+EXTENDED_SHA256 = "23eeaf9d2a6fe3bbf6e51f761dea2873c9ea6694fa2d818e899d51d361628287"
 
 SELECTED = (
     "direct-wordpress-experience",

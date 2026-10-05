@@ -228,7 +228,7 @@ questions:
 
   - id: multi-frontend-backend-ai
     category: multi_source
-    question: Wie verbindet Çağdaş Frontend, Backend und KI in seinem Portfolio?
+    question: Wie kommunizieren das React-Portfolio und das Custom-RAG-Backend miteinander, und welche Rolle spielen FastAPI und RAG/KI dabei?
     expected_sources:
       - document: react-portfolio
         section: Trennung der Projekte
@@ -532,7 +532,7 @@ questions:
 
   - id: broad-project-scope
     category: multi_source
-    question: Was wurde bei diesem Projekt technisch insgesamt umgesetzt?
+    question: Welche technischen Komponenten wurden beim Custom-RAG-Backend des AI Portfolio Assistant umgesetzt?
     expected_sources:
       - document: custom-rag-backend
         section: Portfolio-Relevanz

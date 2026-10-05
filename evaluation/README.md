@@ -133,6 +133,13 @@ must-refuse questions of four different kinds, and 20 answerable ones — most o
 visitor would actually ask. A test (`tests/unit/test_release_acceptance_suite.py`) pins the ids, the
 coverage, the historical cases and the unchanged dataset.
 
+**Two questions reworded (2026-10-05).** `broad-project-scope` and `multi-frontend-backend-ai` were
+made more precise after a full top-30 retrieval analysis
+(`results/retrieval-top30-release-acceptance.json`): the original wording was ambiguous or had too
+little to refer to ("bei diesem Projekt" named no project). Ids, categories and expected sources are
+unchanged; `multi-frontend-backend-ai` still asks for frontend, backend and AI/RAG evidence. Runs
+before and after this change are not comparable for these two questions.
+
 ### Kept (24)
 
 | Question | Main role | Also covers | Why kept |
@@ -160,7 +167,7 @@ coverage, the historical cases and the unchanged dataset.
 | `broad-deployment` | broad, provider history | Docker, production readiness | cut off at the limit (10-02), rate limited (10-02) |
 | `broad-ai-technologies` | broad, retrieval miss | ElevenLabs, RAG, profile | missed in every run; errors (10-02) |
 | `broad-frontend-backend-in-portfolio` | broad, provider history | React integration + FastAPI | unparseable output (10-02), provider error (10-02) |
-| `broad-project-scope` | broad, deictic ("diesem Projekt") | tech stack, portfolio relevance | missed in every run |
+| `broad-project-scope` | broad, names the project (was deictic until 2026-10-05) | tech stack, portfolio relevance | missed in every run |
 
 ### Removed (25)
 
