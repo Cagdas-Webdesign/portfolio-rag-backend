@@ -38,6 +38,9 @@ from portfolio_rag.rag.errors import (
 #: unambiguous; anything less structured than this is a failed generation.
 _FENCED_JSON: Final = re.compile(r"^\s*```(?:json)?\s*(?P<body>.*?)\s*```\s*$", re.DOTALL)
 
+#: The start of a Markdown fence, whether or not it ever closes.
+_OPENING_FENCE: Final = re.compile(r"^```(?:json)?\s*")
+
 #: Labels as the context mints them.
 _LABEL: Final = re.compile(r"^S\d+$")
 
@@ -150,9 +153,53 @@ def _parse_support(raw: object) -> SupportVerdict | None:
         raise _unusable("support_not_recognized") from exc
 
 
-def _load_object(text: str) -> dict[str, Any]:
+def json_candidate(text: str) -> str:
+    """The text a JSON reader should parse: the body of one Markdown fence
+    around the whole reply, or the reply itself, stripped. The answer
+    contract's only tolerance — nothing outside a fence, no prose around it."""
     fenced = _FENCED_JSON.match(text)
-    candidate = fenced.group("body") if fenced else text.strip()
+    return fenced.group("body") if fenced else text.strip()
+
+
+def cut_off_json(text: str) -> bool:
+    """Whether *text* is a JSON object that stops before it closes.
+
+    Strong evidence of truncation, and nothing weaker: the reply (inside an
+    opening fence, closed or not) starts as an object, and at its end an
+    object or array is still open or a string is unterminated. A complete
+    object that is invalid, a reply in prose, an object of the wrong shape
+    — none of those is cut off, and none of them qualifies.
+    """
+    candidate = json_candidate(text)
+    opened = _OPENING_FENCE.match(candidate)
+    if opened:  # a fence that never closed
+        candidate = candidate[opened.end() :]
+    if not candidate.startswith("{"):
+        return False
+    depth = 0
+    in_string = escaped = False
+    for character in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+        elif character in "{[":
+            depth += 1
+        elif character in "}]":
+            depth -= 1
+            if depth == 0:
+                # The object closed: whatever is wrong with it, it ended.
+                return False
+    return in_string or depth > 0
+
+
+def _load_object(text: str) -> dict[str, Any]:
+    candidate = json_candidate(text)
     if not candidate:
         raise _unusable("reply_empty")
 

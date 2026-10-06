@@ -92,6 +92,22 @@ class ProviderCallRecord:
     """Why the call could not be used, when it could not. ``None`` for a
     parsed reply."""
 
+    http_attempts: int | None = None
+    """Every HTTP request this one logical call made, at every layer beneath
+    the port — transport retries and pacing rounds included. Observed, not
+    billed: a provider may or may not charge a request that failed, and this
+    number says nothing about that. ``None`` when nothing reported it (a
+    deadline that cancelled the call)."""
+
+    transport_attempts: int | None = None
+    """The adapter's own requests in the last round."""
+
+    pacing_attempts: int | None = None
+    """Rounds of a retrying decorator above the adapter; ``1`` without one."""
+
+    retry_after_seconds: float | None = None
+    """The longest wait the provider asked for during this call."""
+
     @property
     def is_regeneration(self) -> bool:
         return self.call_type is ProviderCallType.GENERATION and self.attempt > 1
@@ -119,6 +135,12 @@ class ProviderCallRecord:
             "max_output_tokens": self.max_output_tokens,
             "failure_category": self.failure.category.value if self.failure else None,
             "failure_detail": self.failure.detail if self.failure else None,
+            "provider_error_code": self.failure.provider_error_code if self.failure else None,
+            "terminal_status_code": self.failure.status_code if self.failure else None,
+            "http_attempts": self.http_attempts,
+            "transport_attempts": self.transport_attempts,
+            "pacing_attempts": self.pacing_attempts,
+            "retry_after_seconds": self.retry_after_seconds,
             "finish_reason": self.finish_reason,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -154,6 +176,10 @@ def replied_call(
         reply_characters=len(response.text),
         reply_visible_characters=visible_characters(response.text),
         failure=failure,
+        http_attempts=response.http_attempts,
+        transport_attempts=response.transport_attempts,
+        pacing_attempts=response.pacing_attempts,
+        retry_after_seconds=response.retry_after_seconds,
     )
 
 
@@ -166,12 +192,16 @@ def failed_call(
     elapsed_seconds: float,
     failure: GenerationFailure,
     max_output_tokens: int | None = None,
+    call_failure: GenerationFailure | None = None,
 ) -> ProviderCallRecord:
     """The record of a call that returned no reply at all.
 
     A response that was not a completion may still have said why it ended and
     what it cost; whatever the adapter could read is on *failure* and is kept.
+    *call_failure* is the failure of this call alone, before its step counted
+    the requests of earlier calls into it — where its attempt counts come from.
     """
+    own = call_failure or failure
     return ProviderCallRecord(
         call_type=call_type,
         attempt=attempt,
@@ -184,4 +214,8 @@ def failed_call(
         input_tokens=failure.input_tokens,
         output_tokens=failure.output_tokens,
         failure=failure,
+        http_attempts=own.attempts if own.transport_attempts is not None else None,
+        transport_attempts=own.transport_attempts,
+        pacing_attempts=own.pacing_attempts,
+        retry_after_seconds=own.retry_after_seconds,
     )

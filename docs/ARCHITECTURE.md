@@ -76,6 +76,12 @@ second YAML loader is how a non-safe one eventually gets used. It is reached fro
 nothing in `api` or `main` imports it, and no request path can. `evaluation/acceptance.py` judges a
 finished end-to-end export as a release acceptance — from the JSON alone, so the CLI writing the
 verdict and the validator re-checking it apply one rule (see [RELEASE_ACCEPTANCE.md](RELEASE_ACCEPTANCE.md)).
+`evaluation/checkpoint.py` makes an acceptance run one *logical run* of one or more execution
+segments: every completed question is checkpointed atomically (results only — retrieved passages as
+chunk ids, resolved against the identical corpus on resume), a run stopped from outside is paused
+and continued only under an identical identity, and the final export of the whole logical run goes
+through the same `export_e2e`. `evaluation/canary.py` is the one-request provider health check an
+acceptance run makes through the generation port before its first question.
 
 **Pacing lives here, not in an adapter.** A dataset run is a burst of generations, which is what a
 rate-limited account refuses first; a live request is one generation with somebody waiting for it.

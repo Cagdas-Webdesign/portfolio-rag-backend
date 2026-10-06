@@ -73,6 +73,15 @@ def _validate(capsys: pytest.CaptureFixture[str], artifact: Path, *argv: str) ->
     return code, capsys.readouterr().out
 
 
+def _acceptance_lines(ledger: Path) -> list[str]:
+    """The ledger's acceptance-tier lines. A canary has a line of its own."""
+    return [
+        line
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["tier"] == "acceptance"
+    ]
+
+
 def _read(path: Path) -> dict[str, Any]:
     data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     return data
@@ -191,7 +200,7 @@ def test_the_ledger_records_the_commit_and_the_gates(
     _tree(monkeypatch, dirty=False)
     _accept(capsys, tmp_path / "run.json")
 
-    (line,) = (tmp_path / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+    (line,) = _acceptance_lines(tmp_path / "ledger.jsonl")
     entry = json.loads(line)
     assert entry["commit_sha"] == COMMIT
     assert entry["git_dirty"] is False
@@ -460,5 +469,5 @@ def test_the_ledger_records_the_source_identity(
     _tree(monkeypatch, dirty=False)
     _accept(capsys, tmp_path / "run.json")
 
-    (line,) = (tmp_path / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+    (line,) = _acceptance_lines(tmp_path / "ledger.jsonl")
     assert json.loads(line)["release_source_identity"] == SOURCE

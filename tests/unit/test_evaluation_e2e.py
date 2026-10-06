@@ -514,6 +514,10 @@ def test_the_export_keeps_retrieval_and_availability_apart():
         "reply_visible_characters": len("Sure!TheanswerisFastAPI."),
         "input_tokens": None,
         "output_tokens": None,
+        "provider_error_code": None,
+        "rate_limit_kind": None,
+        "transport_attempts": None,
+        "pacing_attempts": None,
     }
     assert payload["questions"][0]["error"] is None
 

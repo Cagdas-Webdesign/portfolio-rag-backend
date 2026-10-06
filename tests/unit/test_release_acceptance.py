@@ -56,6 +56,7 @@ from portfolio_rag.evaluation.budget import (
     LedgerReading,
     UsageHistory,
 )
+from portfolio_rag.evaluation.checkpoint import identity_digest, run_identity
 from portfolio_rag.evaluation.e2e import AbortReason, RunAbort
 from portfolio_rag.evaluation.operations import Tier, acceptance_attempts, preflight
 from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
@@ -102,7 +103,38 @@ def _artifact(
         ),
         **{"tier": Tier.ACCEPTANCE.value, **changes},
     )
-    return with_release_acceptance(export_e2e(report, metadata))
+    return with_release_acceptance(_executed(export_e2e(report, metadata)))
+
+
+def _executed(payload: dict[str, Any]) -> dict[str, Any]:
+    """*payload* with the one execution segment an uninterrupted CLI run records."""
+    run_ = payload["run"]
+    ids = [question["id"] for question in payload["questions"]]
+    calls = sum(len(question["provider_calls"]) for question in payload["questions"])
+    run_.update(
+        {
+            "logical_run_id": run_["run_id"],
+            "original_started_at": run_["generated_at"],
+            "completed_at": run_["generated_at"] if run_["complete"] else None,
+            "resume_count": 0,
+            "execution_segments": [
+                {
+                    "segment": 1,
+                    "run_id": run_["run_id"],
+                    "identity_sha256": identity_digest(run_identity(run_, ids)),
+                    "status": "complete" if run_["complete"] else "paused",
+                    "stop_reason": None,
+                    "completed_question_ids": ids,
+                    "interrupted_question_ids": [],
+                    "calls": calls,
+                    "interrupted_calls": 0,
+                    "estimated_neurons": 0.0,
+                }
+            ],
+            "rate_limit_events": [],
+        }
+    )
+    return payload
 
 
 # --- the verdict ----------------------------------------------------------------
@@ -275,8 +307,9 @@ def test_a_smoke_run_or_a_selection_is_not_a_release_acceptance():
 
 
 def test_the_release_gates_are_frozen():
-    """Changing a gate is a new protocol version, decided before a run."""
-    assert ACCEPTANCE_PROTOCOL_VERSION == "release-acceptance-v1"
+    """Changing a gate is a new protocol version, decided before a run. v2 added
+    one condition (execution segments) and changed no gate."""
+    assert ACCEPTANCE_PROTOCOL_VERSION == "release-acceptance-v2"
     assert tuple(GATES) == RELEASE_GATES
     assert {name: sorted(f.value for f in failures) for name, failures in GATES.items()} == {
         "no_pipeline_errors": ["empty_answer", "pipeline_error"],
@@ -466,7 +499,7 @@ def test_the_summary_carries_the_release_section():
     summary = render_summary(_artifact())
 
     assert "## Release acceptance" in summary
-    assert "**Release acceptance: PASS** (protocol `release-acceptance-v1`)" in summary
+    assert "**Release acceptance: PASS** (protocol `release-acceptance-v2`)" in summary
     assert f"| Commit | `{COMMIT}` |" in summary
     assert f"| Release source identity | `{SOURCE}` |" in summary
     assert f"| Project version | {__version__} |" in summary
@@ -887,8 +920,11 @@ def test_a_tag_that_names_another_version_is_a_provenance_failure():
 
     assert assessed["verdict"] == "FAIL"
     assert any("does not match project_version" in reason for reason in assessed["reasons"])
+    # A tag set after the run is also an identity its segment did not run
+    # under; the run as the CLI would have recorded it with the right tag passes.
     payload["run"]["git_tag"] = f"v{__version__}"
-    assert assess(payload)["verdict"] == "PASS"
+    assert assess(payload)["verdict"] == "FAIL"
+    assert assess(_executed(payload))["verdict"] == "PASS"
 
 
 def test_a_release_without_a_tag_is_valid_and_the_tag_is_kept_apart():

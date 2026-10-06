@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     #: **Provisional**: chosen below that timeout, not measured. To be re-set
     #: from unpaced production latencies; an evaluation's elapsed times include
     #: pacing waits and must not be used for it.
+    #: Production only: an evaluation replaces it with
+    #: :func:`~portfolio_rag.composition.evaluation_question_deadline`, which
+    #: fits the whole recovery path the failure policy allows.
     request_deadline_seconds: float = Field(default=60.0, gt=0)
 
     mistral_api_key: SecretStr | None = None

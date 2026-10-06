@@ -35,7 +35,7 @@ default (`src/portfolio_rag/evaluation/operations.py`, `budget.py`):
 
 * **Local** — `pytest`, Ruff, mypy, knowledge validation, `eval run` on the stand-ins. Free, as
   often as needed. Everything provable without a provider is proven here.
-* **Smoke** — `eval run --e2e --tier smoke`: the five questions in
+* **Smoke** — `eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier smoke`: the five questions in
   `portfolio-questions.provider-smoke.yaml`, each one a provider has already misbehaved on. It
   answers one question: is the provider path healthy enough today to justify a full run? It fails
   on an aborted run, an unclassified failure, a refused request, anything published that must not
@@ -45,12 +45,17 @@ default (`src/portfolio_rag/evaluation/operations.py`, `budget.py`):
   *learn costs*: the forecast learns from earlier runs of any day, and a missing run today is not a
   reason for one. A smoke run is held to its own share — forecast above 10 % of the daily budget
   (the structural bound for five questions is ~2,400) it needs `--allow-yellow`.
-* **Acceptance** — `eval run --e2e --tier acceptance`: the 24 questions of the release-acceptance
+* **Acceptance** — `eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier acceptance`: the 24 questions of the release-acceptance
   suite (see [Release acceptance suite](#release-acceptance-suite)), only when asked for by name. A smoke run never starts one, and nothing restarts one: a red run is analysed, not rerun.
   Whether its export is a **release acceptance** — commit, clean tree, suite version, configuration,
   frozen gates, one PASS/FAIL verdict — and the one narrow provider-outlier rerun are defined in
   [docs/RELEASE_ACCEPTANCE.md](../docs/RELEASE_ACCEPTANCE.md); `eval validate-acceptance` checks an
-  export against it.
+  export against it. An acceptance run first sends one **canary** request and does not start when
+  it fails; it paces its provider calls (2 s by default) and **checkpoints every completed
+  question**. A run stopped by a 429, refused credentials, a provider outage or the budget guard is
+  *paused*, not failed, and is continued with `--resume-from <checkpoint>` — the same logical run,
+  refused unless nothing that decides an answer changed. See
+  [Checkpoint and resume](../docs/RELEASE_ACCEPTANCE.md#checkpoint-and-resume).
 
 An end-to-end run against a real provider without `--tier` is refused, and so is the older answering
 pass (`eval run` without `--e2e`) against one — both before anything is built.

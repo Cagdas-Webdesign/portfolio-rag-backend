@@ -32,7 +32,7 @@ import httpx2 as httpx
 from portfolio_rag.domain.embedding import EmbeddingSpec, EmbeddingVector
 from portfolio_rag.ingestion.embedding import EMBEDDING_REPRESENTATION_VERSION
 from portfolio_rag.ports.embeddings import EmbeddingInput, EmbeddingResult
-from portfolio_rag.ports.errors import EmbeddingProviderError
+from portfolio_rag.ports.errors import EmbeddingProviderError, ProviderFailureKind
 
 PROVIDER_NAME: Final = "mistral"
 
@@ -150,6 +150,7 @@ class MistralEmbeddingProvider:
                     f"Mistral request timed out after {self._timeout_seconds}s "
                     f"while embedding {size} input(s).",
                     retryable=True,
+                    kind=ProviderFailureKind.TIMEOUT,
                 )
             except httpx.RequestError:
                 # The exception text can carry the full URL; the message is
@@ -157,6 +158,7 @@ class MistralEmbeddingProvider:
                 error = EmbeddingProviderError(
                     f"Mistral could not be reached while embedding {size} input(s).",
                     retryable=True,
+                    kind=ProviderFailureKind.UNREACHABLE,
                 )
             else:
                 if response.status_code < 400:
@@ -176,15 +178,23 @@ def _status_error(status_code: int, size: int) -> EmbeddingProviderError:
     """Map an HTTP status to a message. The response body is never included."""
     if status_code in _AUTH_STATUS:
         return EmbeddingProviderError(
-            f"Mistral rejected the credentials (HTTP {status_code}).", retryable=False
+            f"Mistral rejected the credentials (HTTP {status_code}).",
+            retryable=False,
+            kind=ProviderFailureKind.HTTP_STATUS,
+            status_code=status_code,
         )
     if status_code == 429:
         return EmbeddingProviderError(
-            f"Mistral rate limit reached while embedding {size} input(s).", retryable=True
+            f"Mistral rate limit reached while embedding {size} input(s).",
+            retryable=True,
+            kind=ProviderFailureKind.RATE_LIMITED,
+            status_code=status_code,
         )
     return EmbeddingProviderError(
         f"Mistral returned HTTP {status_code} while embedding {size} input(s).",
         retryable=status_code in _RETRYABLE_STATUS,
+        kind=ProviderFailureKind.HTTP_STATUS,
+        status_code=status_code,
     )
 
 

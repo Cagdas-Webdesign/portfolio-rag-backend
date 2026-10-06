@@ -128,10 +128,22 @@ class MistralChatProvider:
 
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
         """Send one completion request and validate what comes back."""
-        body = await self._post_with_retries("/v1/chat/completions", _payload(self._model, request))
-        return _parse_completion(body, fallback_model=self._model)
+        body, attempts = await self._post_with_retries(
+            "/v1/chat/completions", _payload(self._model, request)
+        )
+        try:
+            response = _parse_completion(body, fallback_model=self._model)
+        except LLMProviderError as exc:
+            exc.attempts = exc.transport_attempts = attempts
+            raise
+        # How many requests this response took — telemetry, never a decision.
+        return response.model_copy(
+            update={"transport_attempts": attempts, "http_attempts": attempts}
+        )
 
-    async def _post_with_retries(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _post_with_retries(
+        self, path: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], int]:
         """Post once, and retry a couple of times if the failure looks transient.
 
         A 401 will not become a 200 by asking again; retrying it would just be
@@ -156,14 +168,18 @@ class MistralChatProvider:
                 )
             else:
                 if response.status_code < 400:
-                    return _decode_json(response)
+                    try:
+                        return _decode_json(response), attempt
+                    except LLMProviderError as exc:
+                        exc.attempts = exc.transport_attempts = attempt
+                        raise
                 error = _status_error(
                     response.status_code,
                     retry_after_seconds=_retry_after_seconds(response),
                 )
 
             if not error.retryable or attempt == self._max_attempts:
-                error.attempts = attempt
+                error.attempts = error.transport_attempts = attempt
                 raise error
             await self._sleep(self._retry_delay)
 

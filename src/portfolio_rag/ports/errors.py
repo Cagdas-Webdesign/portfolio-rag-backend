@@ -63,12 +63,6 @@ class PortError(Exception):
         return f"{self.code.value}: {self.message}"
 
 
-class EmbeddingProviderError(PortError):
-    """An embedding provider could not deliver usable vectors."""
-
-    code = PortErrorCode.EMBEDDING_PROVIDER_ERROR
-
-
 class ProviderFailureKind(StrEnum):
     """What a generation adapter ran into. Data on the error, not a class to catch.
 
@@ -89,6 +83,29 @@ class ProviderFailureKind(StrEnum):
     UNSPECIFIED = "unspecified"
 
 
+class EmbeddingProviderError(PortError):
+    """An embedding provider could not deliver usable vectors.
+
+    ``kind`` and ``status_code``: what happened on the wire, when the adapter
+    knows. Diagnostics, like the message — never a body or a credential.
+    """
+
+    code = PortErrorCode.EMBEDDING_PROVIDER_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        retry_after_seconds: float | None = None,
+        kind: ProviderFailureKind = ProviderFailureKind.UNSPECIFIED,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message, retryable=retryable, retry_after_seconds=retry_after_seconds)
+        self.kind = kind
+        self.status_code = status_code
+
+
 class LLMProviderError(PortError):
     """A generation provider could not deliver a usable completion.
 
@@ -99,6 +116,10 @@ class LLMProviderError(PortError):
     ``kind``, ``status_code`` and ``attempts`` are diagnostics. They say what
     happened on the wire and how often it was tried; like the message, they
     never carry a credential, a header or a response body.
+
+    ``provider_error_code`` and ``rate_limit_kind`` identify which of a
+    provider's documented failures it was — for a 429, a daily allocation and a
+    capacity limit need different reactions. Numbers and fixed words only.
 
     ``finish_reason`` and ``usage`` are what a provider reported about a
     response that was nevertheless not a completion — set by an adapter only
@@ -118,21 +139,55 @@ class LLMProviderError(PortError):
         status_code: int | None = None,
         finish_reason: str | None = None,
         usage: TokenUsage | None = None,
+        provider_error_code: int | None = None,
+        rate_limit_kind: str | None = None,
     ) -> None:
         super().__init__(message, retryable=retryable, retry_after_seconds=retry_after_seconds)
         self.kind = kind
         self.status_code = status_code
         self.finish_reason = finish_reason
         self.usage = usage
-        #: Requests made before this error was given up on. Whoever retried
-        #: writes it; an error nobody retried was tried once.
+        #: The provider's own numeric error code from a failed response, when it
+        #: sent one — a number, never the message beside it.
+        self.provider_error_code = provider_error_code
+        #: Which limit a rate-limited request hit, when the provider's code says
+        #: so by its own documentation: ``daily_free_allocation_exhausted``,
+        #: ``capacity_exceeded``. ``None`` when it does not — never guessed.
+        self.rate_limit_kind = rate_limit_kind
+        #: Requests made before this error was given up on — every HTTP
+        #: request, whichever layer made it. Whoever retried writes it; an
+        #: error nobody retried was tried once.
         self.attempts = 1
+        #: The adapter's own transport attempts in the last round.
+        self.transport_attempts = 1
+        #: Rounds of a retrying decorator above the adapter (the evaluation's
+        #: pacer); ``1`` when there was none.
+        self.pacing_attempts = 1
 
 
 class VectorStoreError(PortError):
-    """A vector store could not complete an operation."""
+    """A vector store could not complete an operation.
+
+    ``kind`` and ``status_code`` are what happened on the wire, set by the
+    adapter where it knows. ``retryable`` stays the adapter's judgement for
+    *any* operation — a write whose outcome is unknown is never retryable —
+    while ``kind`` lets a caller that only reads decide for itself.
+    """
 
     code = PortErrorCode.VECTOR_STORE_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        retry_after_seconds: float | None = None,
+        kind: ProviderFailureKind = ProviderFailureKind.UNSPECIFIED,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message, retryable=retryable, retry_after_seconds=retry_after_seconds)
+        self.kind = kind
+        self.status_code = status_code
 
 
 class UnsupportedVectorStoreOperationError(VectorStoreError):

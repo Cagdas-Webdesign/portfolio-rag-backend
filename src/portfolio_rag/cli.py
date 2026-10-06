@@ -18,6 +18,7 @@ No pipeline logic lives here.
     portfolio-rag eval run [--retrieval-delay-seconds F]
     portfolio-rag eval run --e2e --output PATH [--summary PATH] [--note TEXT]
     portfolio-rag eval run [--question-id ID]
+    portfolio-rag eval run --e2e --tier acceptance --resume-from CHECKPOINT --output PATH
 
 Built on ``argparse`` from the standard library. A CLI framework would be a
 runtime dependency bought for a handful of subcommands.
@@ -44,7 +45,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, NamedTuple, TextIO
@@ -59,6 +60,7 @@ from portfolio_rag.composition import (
     build_embedding_spec,
     build_indexing_components,
     build_query_components,
+    evaluation_question_deadline,
 )
 from portfolio_rag.core.config import (
     EmbeddingProviderName,
@@ -115,7 +117,32 @@ from portfolio_rag.evaluation.budget import (
     cost_profile,
     spent,
 )
-from portfolio_rag.evaluation.e2e import AbortReason
+from portfolio_rag.evaluation.canary import (
+    CanaryResult,
+    CanaryStatus,
+    canary_neurons,
+    canary_neurons_bound,
+    run_canary,
+)
+from portfolio_rag.evaluation.checkpoint import (
+    PAUSE_REASONS,
+    PROCESS_INTERRUPTED,
+    PROCESS_INTERRUPTION_LIMIT_PER_QUESTION,
+    AcceptanceCheckpoint,
+    CheckpointError,
+    CheckpointLock,
+    CheckpointLockedError,
+    RunLock,
+    acquire_lock,
+    acquire_run_lock,
+    identity_mismatches,
+    over_interruption_limit,
+    rate_limit_events,
+    run_identity,
+    segment_usage,
+    stale_checkpoint_problem,
+)
+from portfolio_rag.evaluation.e2e import AbortReason, E2ERecord, e2e_run_fields
 from portfolio_rag.evaluation.experiment import (
     DEFAULT_VARIANTS,
     ExperimentError,
@@ -178,12 +205,28 @@ EXIT_ACCEPTANCE_FAILED: Final = 4
 
 DEFAULT_KNOWLEDGE_ROOT: Final = Path("knowledge")
 DEFAULT_EVALUATION_DATASET: Final = Path("evaluation/questions.yaml")
+#: The dataset the provider tiers' suites belong to.
+RELEASE_DATASET: Final = Path("evaluation/portfolio-questions.yaml")
 
 #: Transport attempts the generation adapter gets during a *paced* evaluation.
 #: One, because the pacer above it is doing the retrying — with the provider's
 #: own ``Retry-After`` rather than a fixed second — and two bounded budgets in
 #: series multiply into a burst aimed at an account that is already refusing.
 EVALUATION_GENERATION_ATTEMPTS: Final = 1
+
+#: The minimum gap between the starts of two generation-provider calls in an
+#: acceptance run — generations and grounding checks alike, they share the
+#: paced provider — when ``--generation-delay-seconds`` does not set one.
+#:
+#: Chosen offline, not measured against the provider's limits: an acceptance
+#: run makes about two calls per question, so two seconds keeps it sequential
+#: at no more than thirty calls a minute and adds about a minute and a half to
+#: a 44-call run. It is a burst guard only. None of the 429s on record was a
+#: burst (one stopped the run on its very first call, three others came after
+#: three paced attempts each), and no pacing helps against a daily allocation:
+#: that is what the canary, the checkpoint and resume are for. A ``Retry-After``
+#: the provider sends is taken as given, capped at the pacer's longest wait.
+ACCEPTANCE_PROVIDER_CALL_DELAY_SECONDS: Final = 2.0
 
 _LABEL_WIDTH: Final = 15
 
@@ -305,8 +348,12 @@ def _add_eval_group(groups: argparse._SubParsersAction[argparse.ArgumentParser])
     run.add_argument(
         "--dataset",
         type=Path,
-        default=DEFAULT_EVALUATION_DATASET,
-        help=f"Evaluation dataset file (default: {DEFAULT_EVALUATION_DATASET}).",
+        default=None,
+        help=(
+            f"Evaluation dataset file (default: {DEFAULT_EVALUATION_DATASET}). Required with "
+            f"--tier: the tier suites exist for {RELEASE_DATASET} only, and a run that spends "
+            "the provider allocation names its ground truth explicitly."
+        ),
     )
     run.add_argument(
         "--retrieval-only",
@@ -316,11 +363,13 @@ def _add_eval_group(groups: argparse._SubParsersAction[argparse.ArgumentParser])
     run.add_argument(
         "--generation-delay-seconds",
         type=float,
-        default=0.0,
+        default=None,
         help=(
-            "Minimum seconds between two generation requests, so a full run stays "
-            "inside a provider's rate limits. Waits only where a model is actually "
-            "called. Default: 0, which paces nothing."
+            "Minimum seconds between two generation-provider requests — generations "
+            "and grounding checks alike — so a run stays inside a provider's rate "
+            "limits. Waits only where a model is actually called. Default: "
+            f"{ACCEPTANCE_PROVIDER_CALL_DELAY_SECONDS:g} for --tier acceptance, otherwise 0, "
+            "which paces nothing."
         ),
     )
     run.add_argument(
@@ -455,6 +504,45 @@ def _add_eval_group(groups: argparse._SubParsersAction[argparse.ArgumentParser])
             "provider-outlier rule — once per commit, only after a run that failed on "
             "provider availability alone, and with a --note naming the outlier. See "
             "docs/RELEASE_ACCEPTANCE.md."
+        ),
+    )
+    run.add_argument(
+        "--checkpoint",
+        type=Path,
+        help=(
+            "With --e2e --tier acceptance: where the run checkpoints every completed "
+            "question (default: <output>.checkpoint.json beside --output)."
+        ),
+    )
+    run.add_argument(
+        "--resume-from",
+        type=Path,
+        metavar="CHECKPOINT",
+        help=(
+            "With --e2e --tier acceptance: continue the logical run this checkpoint "
+            "belongs to, from its next question. Refused unless commit, tag, version, "
+            "source identity, dataset, suite, question order, corpus, providers, "
+            "models, retrieval and generation configuration are all identical."
+        ),
+    )
+    run.add_argument(
+        "--break-lock",
+        action="store_true",
+        help=(
+            "With --e2e --tier acceptance: replace the lock another process left on the "
+            "checkpoint, after making sure it is not running. Recorded in the artifact. A lock "
+            "whose process provably no longer exists on this host is replaced without it. "
+            "The logical run's own lock is held by the operating system for as long as its "
+            "process runs and is never broken."
+        ),
+    )
+    run.add_argument(
+        "--no-canary",
+        action="store_true",
+        help=(
+            "With --e2e --tier acceptance: skip the one-request provider health check "
+            "that otherwise runs first and keeps a run from starting on a provider "
+            "that is refusing. Recorded in the export."
         ),
     )
     _add_retrieval_options(run)
@@ -1004,7 +1092,35 @@ def _warn_if_stale_undetectable(plan: IndexPlan, out: TextIO) -> None:
 
 
 def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
-    """Measure retrieval, and unless asked not to, grounding as well."""
+    """Measure retrieval, and unless asked not to, grounding as well.
+
+    An acceptance run holds its checkpoint's lock and its logical run's lock for
+    as long as it runs; both are released here however the run ends, and the
+    run's lock by the operating system if the process itself dies.
+    """
+    locks: list[CheckpointLock | RunLock] = []
+    try:
+        return _run_eval_locked(args, out, locks)
+    finally:
+        for lock in locks:
+            lock.release()
+
+
+def _run_eval_locked(
+    args: argparse.Namespace, out: TextIO, locks: list[CheckpointLock | RunLock]
+) -> int:
+    if args.dataset is None:
+        if args.tier is not None:
+            # Never a silent default for a run that spends the allocation: the
+            # default dataset has no tier suite, and guessing another path would
+            # make the ground truth something the command line does not say.
+            print(
+                f"Invalid end-to-end run: --tier {args.tier} needs an explicit --dataset "
+                f"(the release suites belong to {RELEASE_DATASET}). Nothing was requested.",
+                file=sys.stderr,
+            )
+            return EXIT_INVALID
+        args.dataset = DEFAULT_EVALUATION_DATASET
     try:
         policy = _retrieval_policy_from(args)
     except ValidationError as exc:
@@ -1060,9 +1176,46 @@ def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
             }
         )
 
+    checkpoint: AcceptanceCheckpoint | None = None
+    lock_audit: dict[str, Any] | None = None
+    acceptance = args.e2e and args.tier == Tier.ACCEPTANCE.value and not args.preflight_only
+    if acceptance:
+        path = args.resume_from or _checkpoint_path(args)
+        if args.resume_from is None and path.exists():
+            print(
+                f"Not started: checkpoint {path} already exists. Continue its logical run with "
+                f"--resume-from {path}, or name another file with --checkpoint.",
+                file=sys.stderr,
+            )
+            return EXIT_INVALID
+        # One process per checkpoint, claimed before the file is read or written.
+        try:
+            lock = acquire_lock(path, logical_run_id=None, at=_now(), break_lock=args.break_lock)
+        except CheckpointLockedError as exc:
+            print(f"Not started: {exc} Nothing was requested.", file=sys.stderr)
+            return EXIT_INVALID
+        locks.append(lock)
+        lock_audit = lock.audit
+        if lock_audit is not None:
+            print(f"WARNING: checkpoint lock replaced: {json.dumps(lock_audit)}", file=sys.stderr)
+    if args.resume_from is not None:
+        checkpoint_or_code = _load_for_resume(args, out, locks)
+        if isinstance(checkpoint_or_code, int):
+            return checkpoint_or_code
+        checkpoint = checkpoint_or_code
+
     plan: Preflight | None = None
     if args.e2e and args.tier is not None:
-        plan = _plan_provider_run(args, len(dataset.questions), get_settings(), policy, git)
+        # A resumed run forecasts what it has left, never what it already did.
+        remaining = len(dataset.questions) - (len(checkpoint.records) if checkpoint else 0)
+        plan = _plan_provider_run(
+            args,
+            remaining,
+            get_settings(),
+            policy,
+            git,
+            resuming=checkpoint.logical_run_id if checkpoint else None,
+        )
         _print_labelled(
             f"{args.tier.upper()} PREFLIGHT",
             describe_preflight(plan, yellow_confirmed=args.allow_yellow),
@@ -1116,6 +1269,9 @@ def _run_eval(args: argparse.Namespace, out: TextIO) -> int:
                 plan=plan,
                 suite=suite,
                 git=git,
+                checkpoint=checkpoint,
+                lock_audit=lock_audit,
+                locks=locks,
             )
         )
     except ConfigurationError as exc:
@@ -1138,6 +1294,23 @@ def _e2e_argument_problem(args: argparse.Namespace) -> str | None:
     Checked before a provider is built, so a run that could not have written
     its result never spends a request finding that out.
     """
+    acceptance = args.e2e and args.tier == Tier.ACCEPTANCE.value
+    if args.resume_from is not None:
+        if not acceptance:
+            return "--resume-from belongs to an --e2e --tier acceptance run"
+        if args.rerun_of is not None:
+            return (
+                "--resume-from continues a logical run as it was started; its --rerun-of "
+                "comes from the checkpoint"
+            )
+        if args.checkpoint is not None:
+            return "--resume-from updates the checkpoint it names; leave out --checkpoint"
+    if args.checkpoint is not None and not acceptance:
+        return "--checkpoint belongs to an --e2e --tier acceptance run"
+    if args.no_canary and not acceptance:
+        return "--no-canary belongs to an --e2e --tier acceptance run"
+    if args.break_lock and not acceptance:
+        return "--break-lock belongs to an --e2e --tier acceptance run"
     if args.rerun_of is not None:
         if not args.e2e or args.tier != Tier.ACCEPTANCE.value:
             return "--rerun-of belongs to an --e2e --tier acceptance run"
@@ -1393,10 +1566,22 @@ def _plan_provider_run(
     settings: Settings,
     retrieval_policy: RetrievalPolicy,
     git: GitState,
+    *,
+    resuming: str | None = None,
 ) -> Preflight:
-    """The preflight of a tiered run: computed from files, before anything is built."""
+    """The preflight of a tiered run: computed from files, before anything is built.
+
+    *questions* is what the run will ask — for a resumed run, what it has
+    left. An acceptance run's canary is planned beside them at its cost bound.
+    """
     provider = settings.llm_provider.value
     model = _generation_model(settings)
+    profile = cost_profile(provider, model)
+    canary = (
+        canary_neurons_bound(profile)
+        if profile is not None and args.tier == Tier.ACCEPTANCE.value and not args.no_canary
+        else 0.0
+    )
     requirements = ProfileRequirements(
         provider=provider,
         model=model,
@@ -1413,7 +1598,7 @@ def _plan_provider_run(
         questions=questions,
         provider=provider,
         model=model,
-        profile=cost_profile(provider, model),
+        profile=profile,
         history=load_history(args.history, requirements),
         ledger=Ledger(args.ledger).read(),
         today=datetime.now(UTC).date(),
@@ -1424,6 +1609,8 @@ def _plan_provider_run(
         source_identity=git.source_identity,
         override_reserve=args.override_budget_reserve,
         decided_at=datetime.now(UTC),
+        extra_neurons=canary,
+        resuming=resuming,
     )
     target = args.output.parent if args.output.parent != Path() else Path.cwd()
     if not target.is_dir():
@@ -1531,12 +1718,22 @@ def _pacing_from(args: argparse.Namespace) -> GenerationPacing | None:
     in front of the provider, so an unpaced run is byte for byte the run that
     existed before the flag did.
     """
-    delay = float(args.generation_delay_seconds)
+    delay = _generation_delay(args)
     if delay < 0:
         raise ValueError("--generation-delay-seconds cannot be negative")
     if delay == 0:
         return None
     return GenerationPacing(min_interval_seconds=delay)
+
+
+def _generation_delay(args: argparse.Namespace) -> float:
+    """The gap between generation-provider calls: as asked, or the acceptance
+    default for an acceptance run that did not ask."""
+    if args.generation_delay_seconds is not None:
+        return float(args.generation_delay_seconds)
+    if getattr(args, "e2e", False) and getattr(args, "tier", None) == Tier.ACCEPTANCE.value:
+        return ACCEPTANCE_PROVIDER_CALL_DELAY_SECONDS
+    return 0.0
 
 
 def _paced_answers(components: QueryComponents, pacing: GenerationPacing) -> GroundedAnswerService:
@@ -1574,6 +1771,9 @@ async def _evaluate(
     plan: Preflight | None = None,
     suite: EvaluationSuite = EvaluationSuite.FULL,
     git: GitState | None = None,
+    checkpoint: AcceptanceCheckpoint | None = None,
+    lock_audit: dict[str, Any] | None = None,
+    locks: list[CheckpointLock | RunLock],
 ) -> int:
     git = git if git is not None else _git_state()
     settings: Settings = get_settings().model_copy(
@@ -1582,6 +1782,13 @@ async def _evaluate(
             "retrieval_top_k": policy.top_k,
             "retrieval_min_similarity": policy.min_similarity,
         }
+    )
+    # An evaluation question may take the whole recovery path the failure
+    # policy allows; the production deadline is sized for a waiting visitor and
+    # would cut that path off. Unpaced runs carry this deadline; a paced run
+    # has none (see `_paced_answers`) and is bounded by its attempts instead.
+    settings = settings.model_copy(
+        update={"request_deadline_seconds": evaluation_question_deadline(settings)}
     )
     # A paced run owns its own retrying, so the adapter under it does none.
     # Left on its default the two budgets would multiply rather than add.
@@ -1595,9 +1802,48 @@ async def _evaluate(
     run_id = new_request_id()
     run_binding = set_request_id(run_id)
     try:
+        setup: _AcceptanceSetup | None = None
+        if args.e2e and plan is not None and plan.tier is Tier.ACCEPTANCE:
+            # Before anything touches a provider or an index: a resume whose
+            # identity differs is refused having requested nothing.
+            prepared = _acceptance_setup(
+                args, dataset, settings, components, full_count, run_id, suite, git, checkpoint
+            )
+            if isinstance(prepared, list):
+                print("Resume refused: this is not the same logical run.", file=sys.stderr)
+                for problem in prepared:
+                    print(f"  - {problem}", file=sys.stderr)
+                print("Nothing was requested.", file=sys.stderr)
+                return EXIT_INVALID
+            setup = prepared
+            if checkpoint is None:
+                # A new logical run claims its id before the first request, so
+                # a copy of the checkpoint it is about to write can never be
+                # continued while it runs. (A resume claimed it on loading.)
+                try:
+                    run_lock = acquire_run_lock(
+                        args.ledger,
+                        setup.checkpoint.logical_run_id,
+                        at=_now(),
+                        checkpoint=setup.checkpoint.path,
+                    )
+                except CheckpointLockedError as exc:
+                    print(f"Not started: {exc} Nothing was requested.", file=sys.stderr)
+                    return EXIT_INVALID
+                locks.append(run_lock)
+
         await components.prepare()
 
         print(f"Run:     {run_id}", file=out)
+        if setup is not None:
+            print(f"Logical run: {setup.checkpoint.logical_run_id}", file=out)
+            if setup.restored:
+                print(
+                    f"Resumed: {len(setup.restored)} of {len(dataset.questions)} questions "
+                    f"completed earlier; continuing at "
+                    f"{dataset.questions[len(setup.restored)].id}",
+                    file=out,
+                )
         print(f"Dataset: {args.dataset}  (version {dataset.version})", file=out)
         if suite is not EvaluationSuite.FULL:
             # Only a subset says so: a full run's header is the one it always had.
@@ -1633,6 +1879,19 @@ async def _evaluate(
                 out,
             )
 
+        if args.e2e and setup is not None and plan is not None:
+            return await _evaluate_acceptance(
+                args,
+                dataset,
+                components,
+                pacing,
+                out,
+                plan=plan,
+                setup=setup,
+                run_id=run_id,
+                git=git,
+                lock_audit=lock_audit,
+            )
         if args.e2e:
             return await _evaluate_e2e(
                 args,
@@ -1736,7 +1995,7 @@ async def _evaluate_e2e(
         generation_model=components.llm.model,
         prompt_version=GROUNDED_PROMPT_VERSION,
         context_policy=components.answers.context_policy,
-        generation_delay_seconds=float(args.generation_delay_seconds),
+        generation_delay_seconds=_generation_delay(args),
         corpus=corpus_identity(components.chunks),
         notes=tuple(args.note),
         selected_question_ids=tuple(question.id for question in dataset.questions)
@@ -1770,6 +2029,7 @@ async def _evaluate_e2e(
             f"(estimate); known local today {operations['known_daily_after']:,.0f}",
             file=out,
         )
+    _print_recovery(payload, out)
     release = payload["release_acceptance"]
     print(f"Release acceptance: {release['verdict']}", file=out)
     for reason in release["reasons"]:
@@ -1805,6 +2065,568 @@ async def _evaluate_e2e(
         return EXIT_INVALID
     # The gates are what makes a run a failure; the measurements are numbers.
     return EXIT_OK if report.passed else EXIT_INVALID
+
+
+# --- acceptance: canary, checkpoint, resume --------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptanceSetup:
+    """An acceptance run ready to start: what it will export, where it
+    checkpoints, and what an earlier segment already completed."""
+
+    metadata: E2ERunMetadata
+    checkpoint: AcceptanceCheckpoint
+    restored: tuple[E2ERecord, ...]
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _checkpoint_path(args: argparse.Namespace) -> Path:
+    """Where a new acceptance run checkpoints: as asked, or beside its export."""
+    if args.checkpoint is not None:
+        path: Path = args.checkpoint
+        return path
+    output: Path = args.output
+    return output.with_name(f"{output.stem}.checkpoint.json")
+
+
+def _load_for_resume(
+    args: argparse.Namespace, out: TextIO, locks: list[CheckpointLock | RunLock]
+) -> AcceptanceCheckpoint | int:
+    """Read the checkpoint a resume names, and settle a segment that crashed.
+
+    The logical run is claimed (:func:`acquire_run_lock`) as soon as the file
+    says which run it is — before the ledger is read for staleness and before
+    a crashed segment is settled, so two copies of one checkpoint cannot both
+    pass those checks, or both write the same ledger line.
+
+    A segment its process never closed spent what its completed questions
+    record, and the ledger does not know it: that is entered once, here,
+    before the preflight reads today's consumption. A preflight-only call
+    reads and writes nothing.
+    """
+    try:
+        checkpoint = AcceptanceCheckpoint.load(args.resume_from)
+    except CheckpointError as exc:
+        print(f"Resume refused: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    if not checkpoint.resumable:
+        why = (
+            "it is complete"
+            if checkpoint.status == "complete"
+            else "it was aborted by an internal defect, which is fixed by a change — a new "
+            "release candidate and a new run, not a continuation"
+        )
+        print(
+            f"Resume refused: logical run {checkpoint.logical_run_id} is not continued: {why}.",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    if not args.preflight_only:
+        try:
+            locks.append(
+                acquire_run_lock(
+                    args.ledger,
+                    checkpoint.logical_run_id,
+                    at=_now(),
+                    checkpoint=args.resume_from,
+                )
+            )
+        except (CheckpointLockedError, CheckpointError) as exc:
+            print(f"Resume refused: {exc} Nothing was requested.", file=sys.stderr)
+            return EXIT_INVALID
+    # Only the latest state of a logical run may be continued: an older copy
+    # would ask again what a later segment already asked.
+    stale = stale_checkpoint_problem(checkpoint, Ledger(args.ledger).read().entries)
+    if stale is not None:
+        print(f"Resume refused: {stale} Nothing was requested.", file=sys.stderr)
+        return EXIT_INVALID
+    if args.preflight_only:
+        return checkpoint
+    crashed = checkpoint.close_crashed_segment(at=_now())
+    if crashed is not None:
+        Ledger(args.ledger).append(_crashed_segment_entry(checkpoint, crashed))
+        checkpoint.mark_ledger_recorded(at=_now())
+        print(
+            f"Segment {crashed['segment']} of logical run {checkpoint.logical_run_id} ended "
+            "without closing (process interrupted). Its completed questions are kept and its "
+            "known spend is now in the ledger; the question it was asking is asked again, and "
+            "what that one cost is not known here. The interruption stays in the artifact.",
+            file=out,
+        )
+        over = over_interruption_limit(checkpoint.segments)
+        if over:
+            print(
+                f"WARNING: {', '.join(over)} has now been interrupted by the process more than "
+                f"{PROCESS_INTERRUPTION_LIMIT_PER_QUESTION} time(s). The run can be completed, "
+                "but it can no longer be a release acceptance.",
+                file=sys.stderr,
+            )
+    return checkpoint
+
+
+def _crashed_segment_entry(
+    checkpoint: AcceptanceCheckpoint, segment: dict[str, Any]
+) -> LedgerEntry:
+    identity = checkpoint.identity
+    return LedgerEntry(
+        date_utc=str(segment["started_at"])[:10],
+        run_id=str(segment["run_id"]),
+        tier=Tier.ACCEPTANCE.value,
+        status="aborted",
+        calls=int(segment["calls"]),
+        input_tokens=int(segment["input_tokens"]),
+        output_tokens=int(segment["output_tokens"]),
+        estimated_neurons=float(segment["estimated_neurons"]),
+        usage_coverage=segment["usage_coverage"],
+        artifact=None,
+        abort_reason=PROCESS_INTERRUPTED,
+        commit_sha=identity.get("git_revision"),
+        git_dirty=identity.get("git_dirty"),
+        rerun_of=identity.get("rerun_of"),
+        failed_gates=None,
+        release_source_identity=identity.get("release_source_identity"),
+        logical_run_id=checkpoint.logical_run_id,
+        segment=int(segment["segment"]),
+    )
+
+
+def _e2e_metadata(
+    args: argparse.Namespace,
+    dataset: EvaluationDataset,
+    settings: Settings,
+    components: QueryComponents,
+    full_count: int,
+    run_id: str,
+    suite: EvaluationSuite,
+    git: GitState,
+    *,
+    rerun_of: str | None,
+    notes: tuple[str, ...],
+) -> E2ERunMetadata:
+    pacing = _generation_delay(args) > 0
+    return E2ERunMetadata(
+        retrieval=_run_metadata(
+            args, dataset, settings, components, full_count, run_id, suite, git
+        ),
+        generation_provider=settings.llm_provider.value,
+        generation_model=components.llm.model,
+        prompt_version=GROUNDED_PROMPT_VERSION,
+        context_policy=components.answers.context_policy,
+        generation_delay_seconds=_generation_delay(args),
+        corpus=corpus_identity(components.chunks),
+        notes=notes,
+        selected_question_ids=(),
+        tier=args.tier,
+        transport_attempts=EVALUATION_GENERATION_ATTEMPTS if pacing else None,
+        rerun_of=rerun_of,
+    )
+
+
+def _acceptance_setup(
+    args: argparse.Namespace,
+    dataset: EvaluationDataset,
+    settings: Settings,
+    components: QueryComponents,
+    full_count: int,
+    run_id: str,
+    suite: EvaluationSuite,
+    git: GitState,
+    checkpoint: AcceptanceCheckpoint | None,
+) -> _AcceptanceSetup | list[str]:
+    """Name the logical run and, for a resume, prove it is the same one.
+
+    Wired but not yet prepared: nothing has been requested. Returns the
+    identity differences instead when a resume is not the same logical run.
+    """
+    logical = checkpoint.logical_run_id if checkpoint is not None else run_id
+    rerun_of = checkpoint.identity.get("rerun_of") if checkpoint is not None else args.rerun_of
+    earlier_notes = tuple(
+        note
+        for segment in (checkpoint.segments if checkpoint is not None else [])
+        for note in segment.get("notes") or []
+    )
+    metadata = _e2e_metadata(
+        args,
+        dataset,
+        settings,
+        components,
+        full_count,
+        logical,
+        suite,
+        git,
+        rerun_of=rerun_of,
+        notes=(*earlier_notes, *args.note),
+    )
+    identity = run_identity(
+        e2e_run_fields(metadata), [question.id for question in dataset.questions]
+    )
+    if checkpoint is None:
+        fresh = AcceptanceCheckpoint(
+            path=_checkpoint_path(args),
+            logical_run_id=logical,
+            started_at=_now(),
+            identity=identity,
+        )
+        return _AcceptanceSetup(metadata=metadata, checkpoint=fresh, restored=())
+    problems = identity_mismatches(checkpoint.identity, identity)
+    if problems:
+        return problems
+    try:
+        restored = checkpoint.restore(dataset.questions, components.chunks)
+    except CheckpointError as exc:
+        return [str(exc)]
+    return _AcceptanceSetup(metadata=metadata, checkpoint=checkpoint, restored=restored)
+
+
+async def _evaluate_acceptance(
+    args: argparse.Namespace,
+    dataset: EvaluationDataset,
+    components: QueryComponents,
+    pacing: GenerationPacing | None,
+    out: TextIO,
+    *,
+    plan: Preflight,
+    setup: _AcceptanceSetup,
+    run_id: str,
+    git: GitState,
+    lock_audit: dict[str, Any] | None = None,
+) -> int:
+    """One execution segment of a logical acceptance run.
+
+    Canary first; then the questions not yet completed, each one checkpointed
+    as it finishes; then the export of the logical run so far, one ledger line
+    for this segment, and — when the run was paused — the command that
+    continues it.
+    """
+    checkpoint = setup.checkpoint
+    profile = plan.profile
+    policy = components.answers.context_policy
+    answers = components.answers if pacing is None else _paced_answers(components, pacing)
+    if pacing is not None:
+        print(file=out)
+        _print_labelled("Generation pacing", pacing.describe(), out)
+
+    def price(calls: Sequence[Any]) -> float:
+        return spent(calls, profile, policy)[0] if profile is not None else 0.0
+
+    canary: CanaryResult | None = None
+    canary_cost = 0.0
+    if not args.no_canary:
+        # Straight to the adapter: one request, the transport policy beneath
+        # it and nothing above it — no pacer retries, no second canary.
+        canary = await run_canary(components.llm)
+        canary_cost = canary_neurons(canary, profile) if profile is not None else 0.0
+        Ledger(args.ledger).append(
+            _canary_ledger_entry(run_id, canary, canary_cost, checkpoint.logical_run_id, git)
+        )
+        print(file=out)
+        _print_labelled(
+            "Provider canary",
+            tuple(
+                (name, "—" if value is None else str(value))
+                for name, value in canary.fields().items()
+            ),
+            out,
+        )
+        if not canary.passed:
+            if canary.status is CanaryStatus.RATE_LIMITED and setup.restored:
+                checkpoint.rate_limit_events.append(
+                    {
+                        "segment": None,
+                        "question_id": None,
+                        "source": "canary",
+                        "at": _now(),
+                        "status_code": canary.status_code,
+                        "attempts": 1,
+                        "retry_after_seconds": canary.retry_after_seconds,
+                    }
+                )
+                checkpoint.save(updated_at=_now())
+            print(
+                f"Not started: the provider canary did not pass ({canary.status.value}"
+                + (f", HTTP {canary.status_code}" if canary.status_code else "")
+                + (
+                    f", retry after {canary.retry_after_seconds:g}s"
+                    if canary.retry_after_seconds
+                    else ""
+                )
+                + "). No question was asked.",
+                file=sys.stderr,
+            )
+            return EXIT_INVALID
+
+    segment = checkpoint.begin_segment(
+        run_id=run_id,
+        started_at=_now(),
+        canary=canary.fields() if canary is not None else {"canary_status": "skipped"},
+        budget={**plan.override_fields(), "zone": plan.zone.value},
+        pacing={
+            "generation_delay_seconds": _generation_delay(args),
+            "retrieval_delay_seconds": float(args.retrieval_delay_seconds),
+        },
+        notes=list(args.note),
+        # Only when a lock was left behind and replaced: what, and on what grounds.
+        **({"lock": lock_audit} if lock_audit is not None else {}),
+    )
+    print(file=out)
+    print(f"Checkpoint: {checkpoint.path} (segment {segment})", file=out)
+
+    restored = len(setup.restored)
+    guard = RunGuard(
+        preflight=plan,
+        total_questions=len(dataset.questions) - restored,
+        context_policy=policy,
+        spent_before=canary_cost,
+    )
+
+    def persist(records: tuple[E2ERecord, ...]) -> None:
+        asked = records[restored:]
+        checkpoint.progress(
+            records,
+            segment_completed=[record.question.id for record in asked],
+            usage=segment_usage(asked, interrupted=0, neurons=price),
+            at=_now(),
+        )
+
+    report = await run_e2e_evaluation(
+        dataset,
+        answers,
+        delay_seconds=float(args.retrieval_delay_seconds),
+        guard=guard,
+        completed=setup.restored,
+        on_record=persist,
+        pause_on_last_question=True,
+    )
+
+    asked = report.records[restored:]
+    stop = report.aborted
+    # The questions the stop itself cut short are not completed: they are
+    # asked again on resume, and are no question's failure here.
+    interrupted = guard.interrupted if stop is not None and stop.reason in PAUSE_REASONS else 0
+    kept = report.records[: len(report.records) - interrupted]
+    final = E2EReport(records=kept, aborted=stop)
+    usage = segment_usage(asked, interrupted=interrupted, neurons=price)
+    ended = _now()
+    checkpoint.finish_segment(
+        kept,
+        segment_completed=[record.question.id for record in asked[: len(asked) - interrupted]],
+        interrupted=[record.question.id for record in asked[len(asked) - interrupted :]],
+        usage=usage,
+        stop=stop.reason if stop is not None else None,
+        stop_question_id=stop.question_id if stop is not None else None,
+        events=rate_limit_events(asked, segment=segment, at=ended),
+        at=ended,
+    )
+
+    _print_retrieval_report(dataset, final.retrieval, out)
+    _print_e2e_report(final, out)
+
+    metadata = replace(
+        setup.metadata,
+        retrieval=replace(setup.metadata.retrieval, generated_at=datetime.now(UTC)),
+    )
+    operations = _acceptance_operations(args, plan, guard, final, checkpoint, canary, canary_cost)
+    execution = checkpoint.export_fields(completed_at=ended if stop is None else None)
+    payload = with_release_acceptance(export_e2e(final, metadata, operations, execution))
+    try:
+        write_export(args.output, payload)
+        if args.summary is not None:
+            args.summary.write_text(render_summary(payload), encoding="utf-8")
+    except OSError as exc:
+        print(f"End-to-end export could not be written: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    finally:
+        # Whatever the export did, this segment's calls were made and paid for.
+        Ledger(args.ledger).append(
+            _segment_ledger_entry(run_id, segment, plan, final, usage, checkpoint, args.output, git)
+        )
+        checkpoint.mark_ledger_recorded(at=_now())
+
+    print(file=out)
+    print(f"End-to-end export: {args.output}", file=out)
+    if args.summary is not None:
+        print(f"Summary:           {args.summary}", file=out)
+    print(f"Checkpoint:        {checkpoint.path} ({checkpoint.status})", file=out)
+    print(
+        f"Estimated spend:   {usage.estimated_neurons + canary_cost:,.0f} neurons this segment "
+        f"(estimate, canary included); known local today "
+        f"{operations['known_daily_after']:,.0f}",
+        file=out,
+    )
+    _print_recovery(payload, out)
+    release = payload["release_acceptance"]
+    print(f"Release acceptance: {release['verdict']}", file=out)
+    for reason in release["reasons"]:
+        print(f"  - {reason}", file=out)
+
+    if stop is not None and stop.reason is AbortReason.INTERNAL_DEFECT:
+        print(
+            f"Run aborted at {stop.question_id} by an internal defect ({stop.error_type}); the "
+            "export holds the questions before it. A defect is not resumed: its fix is a new "
+            "release candidate.",
+            file=sys.stderr,
+        )
+        return EXIT_INTERNAL_ERROR
+    if stop is not None:
+        print(
+            f"Run paused after {stop.question_id}: {stop.reason.value}. "
+            f"{len(kept)} of {len(dataset.questions)} questions are completed and checkpointed; "
+            "no release verdict exists until the logical run is complete. It is not "
+            "restarted automatically.",
+            file=sys.stderr,
+        )
+        print("Resume the same logical run with:", file=sys.stderr)
+        print(f"  {_resume_command(args, checkpoint, segment + 1)}", file=sys.stderr)
+    return EXIT_OK if release["verdict"] == "PASS" else EXIT_ACCEPTANCE_FAILED
+
+
+def _resume_command(
+    args: argparse.Namespace, checkpoint: AcceptanceCheckpoint, segment: int
+) -> str:
+    """The exact command that continues this logical run, with a fresh export
+    path so the paused export is kept beside the final one."""
+    output: Path = args.output
+    stem = output.stem.split(".segment-")[0]
+    parts = [
+        "uv run portfolio-rag eval run",
+        f"--dataset {args.dataset}",
+        "--e2e --tier acceptance",
+        f"--resume-from {checkpoint.path}",
+        f"--output {output.with_name(f'{stem}.segment-{segment}{output.suffix}')}",
+    ]
+    if args.summary is not None:
+        summary: Path = args.summary
+        summary_stem = summary.stem.split(".segment-")[0]
+        parts.append(
+            f"--summary {summary.with_name(f'{summary_stem}.segment-{segment}{summary.suffix}')}"
+        )
+    if args.generation_delay_seconds is not None:
+        parts.append(f"--generation-delay-seconds {args.generation_delay_seconds:g}")
+    if args.ledger != DEFAULT_LEDGER:
+        parts.append(f"--ledger {args.ledger}")
+    if args.history != DEFAULT_HISTORY:
+        parts.append(f"--history {args.history}")
+    return " ".join(parts)
+
+
+def _acceptance_operations(
+    args: argparse.Namespace,
+    plan: Preflight,
+    guard: RunGuard,
+    report: E2EReport,
+    checkpoint: AcceptanceCheckpoint,
+    canary: CanaryResult | None,
+    canary_cost: float,
+) -> dict[str, Any]:
+    """The operations section of a logical run.
+
+    ``observed`` covers the whole logical run — every segment's calls, the
+    interrupted ones included, since they were paid for. Today's known
+    consumption adds this segment and its canary to what the ledger already
+    held; earlier segments are in the ledger already and are not counted twice.
+    """
+    fields = _operations(args, checkpoint.logical_run_id, plan, guard, report, None)
+    segments = checkpoint.segments
+    calls = sum(int(segment["calls"]) for segment in segments)
+    reported = sum(int(segment["usage_reported"]) for segment in segments)
+    known_after = plan.known_consumption + canary_cost + guard.estimated_neurons
+    return {
+        **fields,
+        "status": checkpoint.status,
+        "observed": {
+            "scope": "logical_run",
+            "calls": calls,
+            "input_tokens": sum(int(segment["input_tokens"]) for segment in segments),
+            "output_tokens": sum(int(segment["output_tokens"]) for segment in segments),
+            "usage_coverage": round(reported / calls, 3) if calls else None,
+            "estimated_neurons": round(
+                sum(float(segment["estimated_neurons"]) for segment in segments), 1
+            ),
+            "unreported_calls": calls - reported,
+        },
+        "known_daily_after": round(known_after, 1),
+        "nominal_reserve_after": round(plan.policy.daily_budget - known_after, 1),
+        "canary": (
+            {**canary.fields(), "estimated_neurons": round(canary_cost, 1)}
+            if canary is not None
+            else {"canary_status": "skipped"}
+        ),
+    }
+
+
+def _canary_ledger_entry(
+    run_id: str, canary: CanaryResult, cost: float, logical_run_id: str, git: GitState
+) -> LedgerEntry:
+    """The canary's own line: its spend counts today, and it is no acceptance
+    attempt — a canary that refused a run did not use the candidate's run."""
+    return LedgerEntry(
+        date_utc=datetime.now(UTC).date().isoformat(),
+        run_id=run_id,
+        tier="canary",
+        status="complete" if canary.passed else "aborted",
+        calls=1,
+        input_tokens=canary.input_tokens or 0,
+        output_tokens=canary.output_tokens or 0,
+        estimated_neurons=round(cost, 1),
+        usage_coverage=1.0 if canary.usage_reported else 0.0,
+        artifact=None,
+        abort_reason=None if canary.passed else canary.status.value,
+        commit_sha=git.revision,
+        git_dirty=git.dirty,
+        release_source_identity=git.source_identity,
+        logical_run_id=logical_run_id,
+        canary_status=canary.status.value,
+    )
+
+
+def _segment_ledger_entry(
+    run_id: str,
+    segment: int,
+    plan: Preflight,
+    report: E2EReport,
+    usage: Any,
+    checkpoint: AcceptanceCheckpoint,
+    artifact: Path,
+    git: GitState,
+) -> LedgerEntry:
+    """One segment's line: this segment's spend only, the logical run's state."""
+    return LedgerEntry(
+        date_utc=datetime.now(UTC).date().isoformat(),
+        run_id=run_id,
+        tier=Tier.ACCEPTANCE.value,
+        status="complete" if report.aborted is None else "aborted",
+        calls=usage.calls,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        estimated_neurons=round(usage.estimated_neurons, 1),
+        usage_coverage=round(usage.usage_reported / usage.calls, 3) if usage.calls else None,
+        artifact=artifact.as_posix(),
+        abort_reason=report.aborted.reason.value if report.aborted else None,
+        commit_sha=git.revision,
+        git_dirty=git.dirty,
+        rerun_of=checkpoint.identity.get("rerun_of"),
+        failed_gates=[name for name, ok in report.gates.items() if not ok],
+        release_source_identity=git.source_identity,
+        budget_override_used=plan.reserve_overridden,
+        logical_run_id=checkpoint.logical_run_id,
+        segment=segment,
+    )
+
+
+def _print_recovery(payload: dict[str, Any], out: TextIO) -> None:
+    """Whether the larger-cap recovery was exercised live — evidence, not a gate."""
+    recovery = payload["metrics"]["recovery"]
+    print(
+        f"Recovery:          triggered {'yes' if recovery['recovery_triggered'] else 'no'} "
+        f"(generation {recovery['generation_recovery_count']}, grounding check "
+        f"{recovery['grounding_recovery_count']}); "
+        f"RECOVERY_LIVE_VALIDATED = {str(recovery['recovery_live_validated']).lower()}",
+        file=out,
+    )
 
 
 def _print_e2e_report(report: E2EReport, out: TextIO) -> None:
@@ -1904,6 +2726,7 @@ def _run_validate_acceptance(args: argparse.Namespace, out: TextIO) -> int:
             ("artifact", args.artifact.as_posix()),
             ("mode", "publication" if publication else "development"),
             ("verdict", check.verdict or "unreadable"),
+            ("state", check.state or "INVALID"),
             ("consistent", "yes" if check.consistent else "NO"),
         ),
         out,

@@ -41,9 +41,11 @@ uv run portfolio-rag knowledge index --dry-run # what indexing would change
 uv run portfolio-rag query retrieve "…"      # what a question finds (--top-k, --min-similarity)
 uv run portfolio-rag query answer "…"        # the whole pipeline (--show-retrieval, --show-context)
 uv run portfolio-rag eval run                # offline: retrieval + grounding on the stand-ins (--retrieval-only)
-uv run portfolio-rag eval run --e2e --tier smoke --output …       # real provider: health check, ~5 questions
-uv run portfolio-rag eval run --e2e --tier acceptance --output …  # real provider: the 24-question release suite, budget-gated
-uv run portfolio-rag eval run --e2e --tier acceptance --preflight-only --output …  # forecast, no calls
+uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier smoke --output …       # real provider: health check, ~5 questions
+uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier acceptance --output …  # real provider: the 24-question release suite, budget-gated
+uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier acceptance --preflight-only --output …  # forecast, no calls
+uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.yaml --e2e --tier acceptance --resume-from <checkpoint> --output …  # continue a paused run
+# every --tier run names its dataset explicitly; the default (evaluation/questions.yaml) has no tier suite
 uv run portfolio-rag eval run --generation-delay-seconds 8  # pace a live run inside a rate limit
 uv run portfolio-rag eval validate-acceptance <export>  # is this export a release acceptance? (--development)
 uv run pytest                 # all fast, no network, no credentials

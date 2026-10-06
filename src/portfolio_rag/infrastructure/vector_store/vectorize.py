@@ -50,7 +50,11 @@ from portfolio_rag.domain.embedding import (
     VectorRecordState,
 )
 from portfolio_rag.domain.knowledge import DocumentType, TrustLevel, Visibility
-from portfolio_rag.ports.errors import UnsupportedVectorStoreOperationError, VectorStoreError
+from portfolio_rag.ports.errors import (
+    ProviderFailureKind,
+    UnsupportedVectorStoreOperationError,
+    VectorStoreError,
+)
 from portfolio_rag.ports.vector_store import VectorMatch, VectorQuery
 
 STORE_NAME: Final = "cloudflare-vectorize"
@@ -266,9 +270,12 @@ class CloudflareVectorizeStore:
                     "outcome is unknown, not failed. Read the affected ids back, or "
                     "check the index's vector count, before writing them again.",
                     retryable=False,
+                    kind=ProviderFailureKind.TIMEOUT,
                 ) from exc
             raise VectorStoreError(
-                f"Vectorize did not answer `{path}` in time.", retryable=True
+                f"Vectorize did not answer `{path}` in time.",
+                retryable=True,
+                kind=ProviderFailureKind.TIMEOUT,
             ) from exc
         except httpx.TimeoutException as exc:
             # Connect, write and pool timeouts all mean the request never
@@ -276,24 +283,48 @@ class CloudflareVectorizeStore:
             raise VectorStoreError(
                 f"Vectorize request to `{path}` timed out before it was sent.",
                 retryable=True,
+                kind=ProviderFailureKind.TIMEOUT,
             ) from exc
         except httpx.RequestError as exc:
-            raise VectorStoreError(f"Vectorize could not be reached for `{path}`.") from exc
+            # Not retryable for the store's own callers: a write that may have
+            # been read is an unknown outcome. `kind` says what happened, so a
+            # caller that only reads can decide for itself.
+            raise VectorStoreError(
+                f"Vectorize could not be reached for `{path}`.",
+                kind=ProviderFailureKind.UNREACHABLE,
+            ) from exc
 
         if response.status_code >= 400:
             # Cloudflare error bodies can echo request content; only the status
             # and the operation are reported.
-            raise VectorStoreError(f"Vectorize returned HTTP {response.status_code} for `{path}`.")
+            raise VectorStoreError(
+                f"Vectorize returned HTTP {response.status_code} for `{path}`.",
+                kind=(
+                    ProviderFailureKind.RATE_LIMITED
+                    if response.status_code == 429
+                    else ProviderFailureKind.HTTP_STATUS
+                ),
+                status_code=response.status_code,
+            )
 
         try:
             body = response.json()
         except ValueError as exc:
-            raise VectorStoreError(f"Vectorize returned a non-JSON body for `{path}`.") from exc
+            raise VectorStoreError(
+                f"Vectorize returned a non-JSON body for `{path}`.",
+                kind=ProviderFailureKind.MALFORMED_RESPONSE,
+            ) from exc
 
         if not isinstance(body, dict):
-            raise VectorStoreError(f"Vectorize returned a non-object body for `{path}`.")
+            raise VectorStoreError(
+                f"Vectorize returned a non-object body for `{path}`.",
+                kind=ProviderFailureKind.MALFORMED_RESPONSE,
+            )
         if body.get("success") is False:
-            raise VectorStoreError(f"Vectorize reported a failure for `{path}`.")
+            raise VectorStoreError(
+                f"Vectorize reported a failure for `{path}`.",
+                kind=ProviderFailureKind.MALFORMED_RESPONSE,
+            )
         return body.get("result")
 
 

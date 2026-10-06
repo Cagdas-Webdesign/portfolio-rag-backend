@@ -526,6 +526,17 @@ class LedgerEntry:
     """Whether the minimum reserve was manually overridden for this run.
     ``None`` for entries written before it was recorded."""
 
+    logical_run_id: str | None = None
+    """The logical acceptance run this entry is one execution segment of. Its
+    segments are one attempt under the rerun rule. ``None`` for entries
+    written before runs could be resumed: each of those is its own run."""
+
+    segment: int | None = None
+    """Which execution segment of the logical run this entry is, from 1."""
+
+    canary_status: str | None = None
+    """For a ``canary`` entry, what the provider health check found."""
+
 
 @dataclass(frozen=True, slots=True)
 class LedgerReading:

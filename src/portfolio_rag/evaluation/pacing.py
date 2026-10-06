@@ -147,22 +147,35 @@ class PacedLLMProvider:
         """Generate once, waiting for a slot and retrying a refused call."""
         last_error: LLMProviderError | None = None
         requests_made = 0
+        longest_wait: float | None = None
         for attempt in range(1, self._pacing.max_attempts + 1):
             await self._wait(self._delay_before(attempt, last_error))
             self._last_started = self._clock()
             try:
-                return await self._inner.generate(request)
+                response = await self._inner.generate(request)
             except LLMProviderError as exc:
                 # A provider that will not answer differently next time is
                 # reported now. So is one that has used up the budget: the run
                 # fails, which is the result, rather than retrying forever.
                 requests_made += exc.attempts
+                if exc.retry_after_seconds is not None:
+                    longest_wait = max(longest_wait or 0.0, exc.retry_after_seconds)
                 if not exc.retryable or attempt == self._pacing.max_attempts:
                     # The error that ends the generation reports every request
                     # made for it, not only the adapter's share of the last one.
                     exc.attempts = requests_made
+                    exc.pacing_attempts = attempt
                     raise
                 last_error = exc
+            else:
+                # Telemetry only: how many rounds and requests this answer took.
+                return response.model_copy(
+                    update={
+                        "pacing_attempts": attempt,
+                        "http_attempts": requests_made + response.http_attempts,
+                        "retry_after_seconds": longest_wait,
+                    }
+                )
 
         raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
 

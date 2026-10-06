@@ -22,10 +22,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from portfolio_rag.core.errors import AppError, ErrorCode, UpstreamUnavailableError
-from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
+from portfolio_rag.ports.errors import (
+    EmbeddingProviderError,
+    LLMProviderError,
+    ProviderFailureKind,
+    VectorStoreError,
+)
 
 if TYPE_CHECKING:
     from portfolio_rag.rag.retrieval import RetrievalOutcome
@@ -43,11 +48,91 @@ class QueryValidationError(AppError):
     default_message = "The question is empty or too long."
 
 
+class RetrievalStage(StrEnum):
+    """Which external dependency of retrieval failed."""
+
+    EMBEDDING = "embedding"
+    VECTOR_STORE = "vector_store"
+    CHUNK_RESOLUTION = "chunk_resolution"
+
+
+#: HTTP statuses that say "not now", not "not ever", for a read.
+_TRANSIENT_STATUS: Final = frozenset({408, 425, 429})
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalFailure:
+    """What is known about a failed retrieval step. Technical facts only.
+
+    ``transient`` is the one decision on it: a dependency that was briefly
+    unavailable — a timeout, a network failure, a rate limit, a 5xx — as
+    opposed to a request that would fail the same way again (refused
+    credentials, a malformed answer, a vector of the wrong size). Retrieval is
+    a read, so asking the same question again later is always safe.
+    """
+
+    stage: RetrievalStage
+    transient: bool
+    detail: str
+    """The port's failure kind, or the rule a result broke. A fixed word."""
+
+    status_code: int | None = None
+    retry_after_seconds: float | None = None
+
+    def fields(self) -> dict[str, str | int | float | bool | None]:
+        return {
+            "retrieval_stage": self.stage.value,
+            "transient": self.transient,
+            "detail": self.detail,
+            "status_code": self.status_code,
+            "retry_after_seconds": self.retry_after_seconds,
+        }
+
+
+def embedding_failure(error: EmbeddingProviderError) -> RetrievalFailure:
+    """A query embedding the provider could not deliver. Transient exactly when
+    the adapter — which has already retried — judged it worth retrying."""
+    return RetrievalFailure(
+        stage=RetrievalStage.EMBEDDING,
+        transient=error.retryable,
+        detail=error.kind.value,
+        status_code=error.status_code,
+        retry_after_seconds=error.retry_after_seconds,
+    )
+
+
+def vector_store_failure(error: VectorStoreError) -> RetrievalFailure:
+    """A vector search that failed. Judged here, for a read, from what happened
+    on the wire: the store's own ``retryable`` also guards writes whose outcome
+    is unknown, and a search has no such outcome."""
+    status = error.status_code
+    transient = (
+        error.retryable
+        or error.kind
+        in {
+            ProviderFailureKind.TIMEOUT,
+            ProviderFailureKind.UNREACHABLE,
+            ProviderFailureKind.RATE_LIMITED,
+        }
+        or (status is not None and (status in _TRANSIENT_STATUS or status >= 500))
+    )
+    return RetrievalFailure(
+        stage=RetrievalStage.VECTOR_STORE,
+        transient=transient,
+        detail=error.kind.value,
+        status_code=status,
+        retry_after_seconds=error.retry_after_seconds,
+    )
+
+
 class QueryEmbeddingError(UpstreamUnavailableError):
     """The question could not be turned into a vector."""
 
     code: ClassVar[ErrorCode] = ErrorCode.RETRIEVAL_UNAVAILABLE
     default_message = "The knowledge search is temporarily unavailable."
+
+    #: Why, when it is known. Diagnostics — never part of the client's response.
+    failure: RetrievalFailure | None = None
 
 
 class RetrievalUnavailableError(UpstreamUnavailableError):
@@ -55,6 +140,9 @@ class RetrievalUnavailableError(UpstreamUnavailableError):
 
     code: ClassVar[ErrorCode] = ErrorCode.RETRIEVAL_UNAVAILABLE
     default_message = "The knowledge search is temporarily unavailable."
+
+    #: Why, when it is known. Diagnostics — never part of the client's response.
+    failure: RetrievalFailure | None = None
 
 
 class ProviderCallType(StrEnum):
@@ -135,6 +223,19 @@ class GenerationFailure:
     a response that was not a completion but still carried usage. ``None``
     when nothing was reported, never an estimate."""
 
+    provider_error_code: int | None = None
+    """The provider's numeric error code, when a failed response carried one."""
+
+    rate_limit_kind: str | None = None
+    """For a rate limit, which one — only when the provider's documented code
+    says so (see :class:`~portfolio_rag.ports.errors.LLMProviderError`)."""
+
+    transport_attempts: int | None = None
+    """The adapter's own requests in the last round of the failed call."""
+
+    pacing_attempts: int | None = None
+    """Rounds of a retrying decorator above the adapter, for the failed call."""
+
     def fields(self) -> dict[str, str | int | float | bool | None]:
         """The same facts as plain values, for a log record or an export."""
         return {
@@ -150,6 +251,10 @@ class GenerationFailure:
             "reply_visible_characters": self.reply_visible_characters,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "provider_error_code": self.provider_error_code,
+            "rate_limit_kind": self.rate_limit_kind,
+            "transport_attempts": self.transport_attempts,
+            "pacing_attempts": self.pacing_attempts,
         }
 
 
@@ -191,6 +296,10 @@ def provider_failure(
         finish_reason=error.finish_reason,
         input_tokens=usage.input_tokens if usage else None,
         output_tokens=usage.output_tokens if usage else None,
+        provider_error_code=error.provider_error_code,
+        rate_limit_kind=error.rate_limit_kind,
+        transport_attempts=error.transport_attempts,
+        pacing_attempts=error.pacing_attempts,
     )
 
 

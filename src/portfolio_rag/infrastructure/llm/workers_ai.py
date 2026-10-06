@@ -74,6 +74,39 @@ DEFAULT_RETRY_DELAY_SECONDS: Final = 1.0
 MAX_RETRY_AFTER_SECONDS: Final = 300.0
 
 _RETRYABLE_STATUS: Final = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+
+#: The slowest output a request is given time for, in tokens per second.
+#:
+#: A reasoning model's reply is as long as its output cap allows, and a request
+#: that asks for more output needs more time. Measured: across the 118 calls of
+#: ``@cf/openai/gpt-oss-120b`` that reported usage in the end-to-end exports of
+#: 2026-10-04/05, output tokens per second of service-observed elapsed time
+#: (input processing and network included) had a median of 85, a 5th
+#: percentile of 50.7 and a minimum of 38.7. Thirty is a margin of about a
+#: fifth below the slowest call ever seen. A request's read budget is its
+#: output cap at this rate, and never less than the configured timeout — so a
+#: request at the ordinary 800-token cap keeps exactly the timeout it always
+#: had (800 / 30 ≈ 27 s < 30 s), and only a larger cap, the recovery after a
+#: reply stopped at the limit, gets more: 1500 / 30 = 50 s.
+MIN_OUTPUT_TOKENS_PER_SECOND: Final = 30.0
+
+#: Workers AI's documented HTTP 429 codes and the limit each names
+#: (https://developers.cloudflare.com/workers-ai/platform/errors/, read
+#: 2026-10-05). Any other code on a 429 is recorded and left unnamed.
+RATE_LIMIT_KINDS: Final = {
+    3036: "daily_free_allocation_exhausted",
+    3040: "capacity_exceeded",
+}
+
+
+def request_timeout_seconds(base_seconds: float, max_output_tokens: int | None) -> float:
+    """The time one request may take: *base_seconds*, or its output cap at
+    :data:`MIN_OUTPUT_TOKENS_PER_SECOND` when that is longer."""
+    if max_output_tokens is None:
+        return base_seconds
+    return max(base_seconds, max_output_tokens / MIN_OUTPUT_TOKENS_PER_SECOND)
+
+
 _AUTH_STATUS: Final = frozenset({401, 403})
 
 #: Content part types that carry answer text. A part of any other type —
@@ -152,11 +185,27 @@ class WorkersAIChatProvider:
             await self._client.aclose()
 
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
-        """Send one completion request and validate what comes back."""
-        body = await self._post_with_retries(_payload(request))
-        return _parse_completion(body, fallback_model=self._model)
+        """Send one completion request and validate what comes back.
 
-    async def _post_with_retries(self, payload: dict[str, Any]) -> dict[str, Any]:
+        The request's timeout follows its output cap
+        (:func:`request_timeout_seconds`): the same for every transport attempt
+        of it, and never shorter than the configured one.
+        """
+        timeout = request_timeout_seconds(self._timeout_seconds, request.max_output_tokens)
+        body, attempts = await self._post_with_retries(_payload(request), timeout)
+        try:
+            response = _parse_completion(body, fallback_model=self._model)
+        except LLMProviderError as exc:
+            exc.attempts = exc.transport_attempts = attempts
+            raise
+        # How many requests this response took — telemetry, never a decision.
+        return response.model_copy(
+            update={"transport_attempts": attempts, "http_attempts": attempts}
+        )
+
+    async def _post_with_retries(
+        self, payload: dict[str, Any], timeout: float
+    ) -> tuple[dict[str, Any], int]:
         """Post once, and retry a couple of times if the failure looks transient.
 
         A 401 will not become a 200 by asking again; retrying it would just be
@@ -165,10 +214,12 @@ class WorkersAIChatProvider:
         """
         for attempt in range(1, self._max_attempts + 1):
             try:
-                response = await self._client.post(self._path, json=payload)
+                response = await self._client.post(
+                    self._path, json=payload, timeout=httpx.Timeout(timeout)
+                )
             except httpx.TimeoutException:
                 error = LLMProviderError(
-                    f"Workers AI generation timed out after {self._timeout_seconds}s.",
+                    f"Workers AI generation timed out after {timeout:g}s.",
                     retryable=True,
                     kind=ProviderFailureKind.TIMEOUT,
                 )
@@ -195,14 +246,19 @@ class WorkersAIChatProvider:
                 )
             else:
                 if response.status_code < 400:
-                    return _decode_json(response)
+                    try:
+                        return _decode_json(response), attempt
+                    except LLMProviderError as exc:
+                        exc.attempts = exc.transport_attempts = attempt
+                        raise
                 error = _status_error(
                     response.status_code,
                     retry_after_seconds=_retry_after_seconds(response),
+                    provider_error_code=_provider_error_code(response),
                 )
 
             if not error.retryable or attempt == self._max_attempts:
-                error.attempts = attempt
+                error.attempts = error.transport_attempts = attempt
                 raise error
             await self._sleep(self._retry_delay)
 
@@ -232,31 +288,64 @@ def _payload(request: GenerationRequest) -> dict[str, Any]:
 
 
 def _status_error(
-    status_code: int, *, retry_after_seconds: float | None = None
+    status_code: int,
+    *,
+    retry_after_seconds: float | None = None,
+    provider_error_code: int | None = None,
 ) -> LLMProviderError:
-    """Map an HTTP status to a message. The response body is never included."""
+    """Map an HTTP status to a message. The response body is never included —
+    only its numeric error code, which names a documented failure."""
+    code = f", code {provider_error_code}" if provider_error_code is not None else ""
     if status_code in _AUTH_STATUS:
         return LLMProviderError(
-            f"Workers AI rejected the credentials (HTTP {status_code}).",
+            f"Workers AI rejected the credentials (HTTP {status_code}{code}).",
             retryable=False,
             kind=ProviderFailureKind.HTTP_STATUS,
             status_code=status_code,
+            provider_error_code=provider_error_code,
         )
     if status_code == 429:
+        kind = RATE_LIMIT_KINDS.get(provider_error_code) if provider_error_code else None
         return LLMProviderError(
-            "Workers AI rate limit reached during generation.",
+            f"Workers AI rate limit reached during generation (HTTP 429{code}"
+            + (f": {kind}" if kind else "")
+            + ").",
             retryable=True,
             retry_after_seconds=retry_after_seconds,
             kind=ProviderFailureKind.RATE_LIMITED,
             status_code=status_code,
+            provider_error_code=provider_error_code,
+            rate_limit_kind=kind,
         )
     return LLMProviderError(
-        f"Workers AI returned HTTP {status_code} during generation.",
+        f"Workers AI returned HTTP {status_code} during generation{code}.",
         retryable=status_code in _RETRYABLE_STATUS,
         retry_after_seconds=retry_after_seconds,
         kind=ProviderFailureKind.HTTP_STATUS,
         status_code=status_code,
+        provider_error_code=provider_error_code,
     )
+
+
+def _provider_error_code(response: httpx.Response) -> int | None:
+    """The first numeric code in Cloudflare's error envelope, or nothing.
+
+    ``{"success": false, "errors": [{"code": 3036, "message": "…"}]}``: only
+    the integer is read. The message beside it is never looked at, so no
+    provider text can reach an exception, a log or an export.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if not isinstance(errors, list):
+        return None
+    for entry in errors:
+        code = entry.get("code") if isinstance(entry, dict) else None
+        if isinstance(code, int) and not isinstance(code, bool):
+            return code
+    return None
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:

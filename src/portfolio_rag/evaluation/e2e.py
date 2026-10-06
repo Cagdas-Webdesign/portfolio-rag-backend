@@ -53,7 +53,7 @@ from portfolio_rag.evaluation.metrics import (
     is_relevant,
     score_retrieval,
 )
-from portfolio_rag.rag.errors import GenerationFailure
+from portfolio_rag.rag.errors import GenerationFailure, RetrievalFailure
 from portfolio_rag.rag.generation import SupportVerdict
 from portfolio_rag.rag.language import INSUFFICIENT_KNOWLEDGE_ANSWERS
 from portfolio_rag.rag.policy import ContextPolicy
@@ -249,6 +249,10 @@ class E2ERecord:
     for a question that errored, up to and including the failing one.
     Metadata only."""
 
+    retrieval_failure: RetrievalFailure | None = None
+    """Why retrieval failed, when that is what failed: the stage, and whether
+    the dependency was only briefly unavailable. Technical facts only."""
+
     @property
     def errored(self) -> bool:
         return self.outcome is None
@@ -341,6 +345,7 @@ def errored_record(
     retrieval: RetrievalOutcome | None = None,
     failure: GenerationFailure | None = None,
     provider_calls: tuple[ProviderCallRecord, ...] = (),
+    retrieval_failure: RetrievalFailure | None = None,
 ) -> E2ERecord:
     """The record of a question the pipeline raised on.
 
@@ -389,6 +394,7 @@ def errored_record(
             1 for call in provider_calls if call.call_type is ProviderCallType.GROUNDING_CHECK
         ),
         provider_calls=provider_calls,
+        retrieval_failure=retrieval_failure,
     )
 
 
@@ -414,6 +420,11 @@ class AbortReason(StrEnum):
 
     BUDGET_GUARD = "budget_guard"
     """The run was heading past the production reserve."""
+
+    RETRIEVAL_UNAVAILABLE = "retrieval_unavailable"
+    """The query embedding or the vector search was briefly unavailable — a
+    timeout, a network failure, a rate limit, a 5xx. The question did not get
+    as far as an answer, and asking it again later is safe."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -541,11 +552,14 @@ def export_e2e(
     report: E2EReport,
     metadata: E2ERunMetadata,
     operations: Mapping[str, Any] | None = None,
+    execution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Describe *report* as plain JSON-ready data.
 
     Built on the retrieval export, so the run header, the retrieval metrics and
     every question's hits have exactly the shape a retrieval-only file has.
+    *execution* is how a checkpointed run was executed — its logical run and
+    segments (`evaluation.checkpoint`) — and is recorded under ``run``.
     """
     # Every question gets a row, observed or not; the metrics are computed
     # over the observed ones only.
@@ -597,6 +611,7 @@ def export_e2e(
                 if report.aborted is not None
                 else None
             ),
+            **(dict(execution) if execution is not None else {}),
         },
         "operations": dict(operations) if operations is not None else None,
         "passed": report.passed,
@@ -620,6 +635,9 @@ def export_e2e(
             "robustness": _robustness_metrics(report),
             "latency": _latency_metrics(report),
             "provider_calls": _provider_call_metrics(report),
+            "recovery": recovery_evidence(
+                report, recovery_cap=metadata.context_policy.recovery_output_tokens
+            ),
         },
         "failures": {
             failure.value: _ids(report.with_failure(failure))
@@ -633,8 +651,45 @@ def export_e2e(
     }
 
 
+def e2e_run_fields(metadata: E2ERunMetadata) -> dict[str, Any]:
+    """The ``run`` section an export of *metadata* will carry, before any
+    question is asked — what a run's identity is computed from."""
+    fields: dict[str, Any] = export_e2e(E2EReport(records=()), metadata)["run"]
+    for key in ("complete", "aborted"):
+        fields.pop(key)
+    return fields
+
+
 def _ids(records: Sequence[E2ERecord]) -> list[str]:
     return [record.question.id for record in records]
+
+
+def recovery_evidence(report: E2EReport, *, recovery_cap: int) -> dict[str, Any]:
+    """Whether this run exercised the recovery at the larger output cap — an
+    honest observation, never a gate.
+
+    A recovery happens only when a model stops at the limit, which no run can
+    force without changing what it measures. ``recovery_live_validated`` is
+    true when a recovery asked for *recovery_cap* and its reply was used;
+    false means the path was not observed here, not that it failed.
+    """
+    calls = [call for record in report.records for call in record.provider_calls]
+    recoveries = [call for call in calls if call.is_recovery]
+    caps = [call.max_output_tokens for call in recoveries if call.max_output_tokens is not None]
+    return {
+        "recovery_triggered": bool(recoveries),
+        "generation_recovery_count": sum(
+            1 for call in recoveries if call.call_type is ProviderCallType.GENERATION
+        ),
+        "grounding_recovery_count": sum(
+            1 for call in recoveries if call.call_type is ProviderCallType.GROUNDING_CHECK
+        ),
+        "recovery_max_output_tokens_observed": max(caps) if caps else None,
+        "recovery_live_validated": any(
+            call.max_output_tokens == recovery_cap and call.result is CallResult.PARSED
+            for call in recoveries
+        ),
+    }
 
 
 def _availability_metrics(report: E2EReport) -> dict[str, Any]:
@@ -751,12 +806,17 @@ def summarize_provider_calls(calls: Sequence[ProviderCallRecord]) -> dict[str, A
     """
     reported = [call for call in calls if call.usage_reported]
     latencies = [call.elapsed_seconds for call in calls]
+    counted = [call.http_attempts for call in calls if call.http_attempts is not None]
     finish_reasons: dict[str, int] = {}
     for call in calls:
         key = call.finish_reason if call.finish_reason is not None else "none"
         finish_reasons[key] = finish_reasons.get(key, 0) + 1
     return {
         "calls": len(calls),
+        # Requests on the wire behind those calls, where reported. Observed, not
+        # billed: a failed request may or may not have been charged.
+        "http_attempts": sum(counted) if counted else None,
+        "http_attempts_reported": len(counted),
         "regenerations": sum(1 for call in calls if call.is_regeneration),
         "results": {
             result.value: sum(1 for call in calls if call.result is result) for result in CallResult
@@ -779,6 +839,9 @@ def _answer(record: E2ERecord) -> dict[str, Any]:
         "outcome": record.outcome.value if record.outcome is not None else "error",
         "error_code": record.error_code,
         "error": record.error.fields() if record.error is not None else None,
+        "retrieval_error": (
+            record.retrieval_failure.fields() if record.retrieval_failure is not None else None
+        ),
         "answer": record.answer,
         "controlled_refusal": record.is_controlled_refusal,
         "support": record.support.value if record.support is not None else None,
@@ -885,6 +948,7 @@ def render_summary(payload: dict[str, Any]) -> str:
         f"| Internal label leaks | {robustness['internal_label_leaks']} |",
         f"| Internal passages retrieved | {robustness['internal_passages_retrieved']} |",
         f"| Stale index matches dropped | {robustness['unresolved_matches']} |",
+        *_recovery_row(metrics.get("recovery")),
         f"| Seconds per question, median / max | {latency['median_seconds']} / "
         f"{latency['max_seconds']} (pacing included) |",
         "",
@@ -966,6 +1030,18 @@ def render_summary(payload: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _recovery_row(recovery: dict[str, Any] | None) -> list[str]:
+    """Older exports carry no recovery evidence, and get no row."""
+    if not recovery:
+        return []
+    return [
+        f"| Recoveries (generation / grounding check) | "
+        f"{recovery['generation_recovery_count']} / {recovery['grounding_recovery_count']}; "
+        f"live validated at the larger cap: "
+        f"{'yes' if recovery['recovery_live_validated'] else 'no'} |"
+    ]
+
+
 def _question_table(payload: dict[str, Any]) -> list[str]:
     """Every question of the run, one row each: what it is and what happened.
 
@@ -1043,6 +1119,7 @@ def _release_summary(payload: dict[str, Any]) -> list[str]:
         f"| Questions | {release['question_count']} |",
         f"| Tier | {run.get('tier') or '—'} |",
         f"| Run status | {'complete' if run['complete'] else 'aborted'} |",
+        *_execution_rows(run),
         f"| Rerun of | {release.get('rerun_of') or '—'} |",
         f"| Provider / model | {generation['provider']} / `{generation['model']}` |",
         f"| Embedding | `{run['embedding']['identity']}` |",
@@ -1066,6 +1143,34 @@ def _release_summary(payload: dict[str, Any]) -> list[str]:
         lines += [f"- {reason}" for reason in release["reasons"]]
         lines.append("")
     return lines
+
+
+def _execution_rows(run: dict[str, Any]) -> list[str]:
+    """How a checkpointed run was executed. Older exports have no segments."""
+    segments = run.get("execution_segments")
+    if not segments:
+        return []
+    stops = ", ".join(
+        f"{segment['segment']}: {segment.get('stop_reason') or segment.get('status')}"
+        for segment in segments
+    )
+    return [
+        f"| Logical run | `{run.get('logical_run_id')}`, "
+        f"started {run.get('original_started_at')} |",
+        f"| Execution segments | {len(segments)} (resumes: {run.get('resume_count')}; {stops}) |",
+        f"| Rate-limit events | {len(run.get('rate_limit_events') or [])} |",
+        "| Process interruptions | "
+        + (
+            ", ".join(
+                f"`{qid}` in segment {segment['segment']}"
+                for segment in segments
+                if segment.get("stop_reason") == "process_interrupted"
+                for qid in segment.get("interrupted_question_ids") or []
+            )
+            or "none"
+        )
+        + " |",
+    ]
 
 
 def _tree_state(dirty: Any) -> str:

@@ -153,34 +153,48 @@ class Preflight:
     decided_at: str | None = None
     """When the preflight was decided, UTC, ISO 8601."""
 
+    extra_neurons: float = 0.0
+    """Spend planned beside the questions: the canary's cost bound."""
+
+    resuming: str | None = None
+    """The logical run this preflight continues, if it continues one. Its
+    forecast covers the remaining questions only."""
+
     @property
     def confirmation_required(self) -> bool:
         return self.zone is BudgetZone.YELLOW
 
     @property
-    def estimated_reserve_after(self) -> float | None:
+    def planned_neurons(self) -> float | None:
+        """The forecast of the questions to ask, plus the canary."""
         if self.forecast is None:
             return None
-        return self.policy.daily_budget - self.known_consumption - self.forecast.neurons
+        return self.forecast.neurons + self.extra_neurons
+
+    @property
+    def estimated_reserve_after(self) -> float | None:
+        if self.planned_neurons is None:
+            return None
+        return self.policy.daily_budget - self.known_consumption - self.planned_neurons
 
     @property
     def forecast_share(self) -> float | None:
-        if self.forecast is None:
+        if self.planned_neurons is None:
             return None
-        return self.forecast.neurons / self.policy.daily_budget
+        return self.planned_neurons / self.policy.daily_budget
 
     @property
     def band(self) -> CostBand | None:
-        if self.forecast is None:
+        if self.planned_neurons is None:
             return None
-        return cost_band(self.forecast.neurons, self.policy.daily_budget)
+        return cost_band(self.planned_neurons, self.policy.daily_budget)
 
     @property
     def projected_total(self) -> float | None:
-        """Today's known spend plus this run's forecast."""
-        if self.forecast is None:
+        """Today's known spend plus this run's forecast and its canary."""
+        if self.planned_neurons is None:
             return None
-        return self.known_consumption + self.forecast.neurons
+        return self.known_consumption + self.planned_neurons
 
     def override_fields(self) -> dict[str, Any]:
         """The audit record of the reserve override. Present on every run, so
@@ -232,6 +246,8 @@ class Preflight:
             "blockers": list(self.blockers),
             "warnings": list(self.warnings),
             "budget_override": self.override_fields(),
+            "canary_neurons_bound": round(self.extra_neurons, 1),
+            "resuming": self.resuming,
         }
 
 
@@ -253,6 +269,8 @@ def preflight(
     source_identity: str | None = None,
     override_reserve: bool = False,
     decided_at: datetime | None = None,
+    extra_neurons: float = 0.0,
+    resuming: str | None = None,
 ) -> Preflight:
     """Decide, before a single call, whether a run may start and what it will cost.
 
@@ -270,6 +288,13 @@ def preflight(
     *override_reserve* sets the minimum reserve aside for this run and nothing
     else: the zone is then judged against the nominal daily budget, and every
     blocker — the rerun rule, a failed smoke run, an unreadable plan — stands.
+
+    *extra_neurons* is spend planned beside the questions — the canary's cost
+    bound — and is judged with the forecast. *resuming* continues a logical
+    run: *questions* is then the questions it has left, and the run's own
+    earlier segments are not an earlier attempt under the rerun rule. Today's
+    known spend is the ledger's, earlier segments included; nothing already
+    completed is forecast again.
     """
     stamp = decided_at.isoformat() if decided_at is not None else None
     if tier is Tier.SMOKE:
@@ -300,6 +325,7 @@ def preflight(
             dirty=dirty,
             rerun_of=rerun_of,
             source_identity=source_identity,
+            resuming=resuming,
         )
 
     if profile is None:
@@ -321,11 +347,13 @@ def preflight(
             max_port_calls=MAX_PORT_CALLS_PER_QUESTION * questions,
             reserve_overridden=override_reserve,
             decided_at=stamp,
+            resuming=resuming,
         )
 
     forecast = forecast_run(questions, history, profile, context_policy, today=today)
-    zone = budget_zone(forecast.neurons, known, policy, reserve_overridden=override_reserve)
-    reserve_kept = known + forecast.neurons <= policy.spendable
+    planned = forecast.neurons + extra_neurons
+    zone = budget_zone(planned, known, policy, reserve_overridden=override_reserve)
+    reserve_kept = known + planned <= policy.spendable
     if forecast.confidence is Confidence.LOW:
         warnings.append(
             "forecast confidence is low, so the forecast is the structural upper bound: "
@@ -355,14 +383,25 @@ def preflight(
         reserve_overridden=override_reserve,
         reserve_kept=reserve_kept,
         decided_at=stamp,
+        extra_neurons=extra_neurons,
+        resuming=resuming,
     )
 
 
 def acceptance_attempts(ledger: LedgerReading) -> tuple[AcceptanceAttempt, ...]:
-    """Every acceptance run the ledger records, of any day, for the rerun rule."""
+    """Every acceptance run the ledger records, of any day, for the rerun rule.
+
+    The segments of one logical run are one attempt, named by the logical run
+    id and judged by its latest segment: a run paused by a 429 and completed
+    later was one run, not two.
+    """
+    latest: dict[str, LedgerEntry] = {}
+    for entry in ledger.entries:
+        if entry.tier == Tier.ACCEPTANCE.value:
+            latest[entry.logical_run_id or entry.run_id] = entry
     return tuple(
         AcceptanceAttempt(
-            run_id=entry.run_id,
+            run_id=run_id,
             commit_sha=entry.commit_sha,
             git_dirty=entry.git_dirty,
             status=entry.status,
@@ -370,8 +409,7 @@ def acceptance_attempts(ledger: LedgerReading) -> tuple[AcceptanceAttempt, ...]:
             failed_gates=tuple(entry.failed_gates) if entry.failed_gates is not None else None,
             source_identity=entry.release_source_identity,
         )
-        for entry in ledger.entries
-        if entry.tier == Tier.ACCEPTANCE.value
+        for run_id, entry in latest.items()
     )
 
 
@@ -522,7 +560,11 @@ class RunGuard:
         preflight: Preflight,
         total_questions: int,
         context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY,
+        spent_before: float = 0.0,
     ) -> None:
+        """*spent_before* is spend of this invocation the ledger does not know
+        yet when the preflight read it — the canary — and counts against the
+        ceiling like the questions' own."""
         self._preflight = preflight
         self._total = total_questions
         self._context_policy = context_policy
@@ -535,6 +577,12 @@ class RunGuard:
             preflight.forecast.neurons if preflight.forecast is not None else None
         )
         self.stopped_by_budget = False
+        self.spent_before = spent_before
+        #: How many of the questions observed last were cut short by the stop
+        #: the guard just called — the 429, the refused credentials, the
+        #: streak of provider failures. ``0`` for a budget stop, which comes
+        #: after a question that finished.
+        self.interrupted = 0
 
     def observe(self, record: E2ERecord) -> AbortReason | None:
         """Account for one finished question; say whether to stop before the next."""
@@ -547,15 +595,24 @@ class RunGuard:
             self._per_question.append(cost)
             self._project()
 
+        if record.retrieval_failure is not None and record.retrieval_failure.transient:
+            # Retrieval's dependency was briefly unavailable: the question never
+            # reached an answer. The run pauses rather than fail the question.
+            self.interrupted = 1
+            return AbortReason.RETRIEVAL_UNAVAILABLE
+
         failure = record.error
         if failure is not None:
             if failure.status_code == 429 or failure.detail == "rate_limited":
+                self.interrupted = 1
                 return AbortReason.RATE_LIMITED
             if failure.status_code in _AUTH_STATUSES:
+                self.interrupted = 1
                 return AbortReason.AUTH_FAILURE
             if failure.category in _TRANSIENT:
                 self._transient_streak += 1
                 if self._transient_streak >= _SYSTEMIC_STREAK:
+                    self.interrupted = self._transient_streak
                     return AbortReason.SYSTEMIC_PROVIDER_FAILURE
             else:
                 self._transient_streak = 0
@@ -619,11 +676,12 @@ class RunGuard:
         spendable = self._preflight.policy.ceiling(
             reserve_overridden=self._preflight.reserve_overridden
         )
-        if self._preflight.known_consumption + self.estimated_neurons > spendable:
+        known = self._preflight.known_consumption + self.spent_before
+        if known + self.estimated_neurons > spendable:
             return True
         if len(self._per_question) < _GUARD_MIN_QUESTIONS:
             return False
-        return self._preflight.known_consumption + self.projected_final_neurons > spendable
+        return known + self.projected_final_neurons > spendable
 
 
 # --- after a smoke run ----------------------------------------------------------------------------
@@ -715,6 +773,10 @@ def describe_preflight(
                 "—" if forecast.usage_coverage is None else f"{forecast.usage_coverage:.0%}",
             ),
         ]
+    if preflight.resuming is not None:
+        rows.append(("resuming", f"logical run {preflight.resuming} (remaining questions only)"))
+    if preflight.extra_neurons:
+        rows.append(("canary bound", f"{preflight.extra_neurons:,.0f} neurons (one request)"))
     reserve = f"{preflight.policy.minimum_reserve:,.0f}"
     if preflight.reserve_overridden:
         reserve += " (manually overridden for this run)"

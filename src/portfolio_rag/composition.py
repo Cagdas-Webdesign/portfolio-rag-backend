@@ -44,6 +44,7 @@ from portfolio_rag.infrastructure.llm import (
     MistralChatProvider,
     WorkersAIChatProvider,
 )
+from portfolio_rag.infrastructure.llm.workers_ai import request_timeout_seconds
 from portfolio_rag.infrastructure.vector_store import CloudflareVectorizeStore, InMemoryVectorStore
 from portfolio_rag.ingestion import KnowledgeBaseError, load_knowledge_base
 from portfolio_rag.ingestion.chunking import ChunkingError, chunk_knowledge_base
@@ -52,9 +53,13 @@ from portfolio_rag.ports.embeddings import EmbeddingProvider
 from portfolio_rag.ports.knowledge import ChunkResolver
 from portfolio_rag.ports.llm import LLMProvider
 from portfolio_rag.ports.vector_store import VectorStore
-from portfolio_rag.rag.policy import ContextPolicy, RetrievalPolicy
+from portfolio_rag.rag.policy import DEFAULT_CONTEXT_POLICY, ContextPolicy, RetrievalPolicy
 from portfolio_rag.rag.retrieval import PublicRetrievalService
-from portfolio_rag.rag.service import GroundedAnswerService
+from portfolio_rag.rag.service import (
+    MAX_GENERATION_ATTEMPTS,
+    MAX_GROUNDING_CHECK_ATTEMPTS,
+    GroundedAnswerService,
+)
 
 _logger = get_logger(__name__)
 
@@ -301,6 +306,40 @@ def load_corpus_chunks(root: Path) -> tuple[KnowledgeChunk, ...]:
         raise ConfigurationError(
             f"The knowledge base at {root} could not be loaded: {exc}"
         ) from exc
+
+
+def evaluation_question_deadline(
+    settings: Settings, policy: ContextPolicy = DEFAULT_CONTEXT_POLICY
+) -> float:
+    """The deadline of one question in an evaluation run, derived from what the
+    failure policy allows it to do.
+
+    The production deadline (``request_deadline_seconds``) is sized for a
+    visitor waiting behind a platform timeout; it cannot hold the longest
+    legitimate question — a generation, its recovery at the larger output cap,
+    a grounding check and its recovery. An evaluation exists to observe that
+    path, so its deadline is the sum of what each step may take at its own
+    request timeout, plus one provider timeout for retrieval (query embedding
+    and vector search). Still a hard limit: a question that overruns it is
+    cancelled and ends as a technical error, as before. Transport retries
+    beneath a step spend from it.
+    """
+
+    def call(max_output_tokens: int) -> float:
+        if settings.llm_provider is LLMProviderName.CLOUDFLARE_WORKERS_AI:
+            return request_timeout_seconds(settings.provider_timeout_seconds, max_output_tokens)
+        return settings.provider_timeout_seconds
+
+    def step(attempts: int) -> float:
+        return call(policy.output_reserve_tokens) + (attempts - 1) * call(
+            policy.recovery_output_tokens
+        )
+
+    return (
+        settings.provider_timeout_seconds
+        + step(MAX_GENERATION_ATTEMPTS)
+        + step(MAX_GROUNDING_CHECK_ATTEMPTS)
+    )
 
 
 def build_query_components(

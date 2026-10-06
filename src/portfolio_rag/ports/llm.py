@@ -83,6 +83,21 @@ class GenerationResponse(BaseModel):
     model: str = Field(description="Provider-specific model identifier that produced the text.")
     finish_reason: str | None = None
     usage: TokenUsage | None = None
+    transport_attempts: int = Field(
+        default=1, ge=1, description="The adapter's own requests in the round that answered."
+    )
+    pacing_attempts: int = Field(
+        default=1,
+        ge=1,
+        description="Rounds of a retrying decorator above the adapter; 1 without one.",
+    )
+    http_attempts: int = Field(
+        default=1, ge=1, description="Every request made for this response, at every layer."
+    )
+    retry_after_seconds: float | None = Field(
+        default=None,
+        description="The longest wait a provider asked for on the way to this response.",
+    )
 
 
 class LLMProvider(Protocol):

@@ -26,8 +26,9 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 from portfolio_rag.core.errors import AppError
 from portfolio_rag.core.logging import get_logger
@@ -46,7 +47,12 @@ from portfolio_rag.evaluation.metrics import (
     score_retrieval,
 )
 from portfolio_rag.evaluation.pacing import Sleeper
-from portfolio_rag.rag.errors import GenerationUnavailableError, QueryValidationError
+from portfolio_rag.rag.errors import (
+    GenerationUnavailableError,
+    QueryEmbeddingError,
+    QueryValidationError,
+    RetrievalUnavailableError,
+)
 from portfolio_rag.rag.query import normalize_query
 from portfolio_rag.rag.retrieval import PublicRetrievalService
 from portfolio_rag.rag.service import AnswerOutcome, GroundedAnswerService
@@ -197,6 +203,18 @@ async def run_grounding_evaluation(
     return GroundingReport(records=tuple(records))
 
 
+#: Guard stops that cut the question they were observed on short: it ended
+#: *because* the provider stopped serving, not on its own terms.
+_INTERRUPTING: Final = frozenset(
+    {
+        AbortReason.RATE_LIMITED,
+        AbortReason.AUTH_FAILURE,
+        AbortReason.SYSTEMIC_PROVIDER_FAILURE,
+        AbortReason.RETRIEVAL_UNAVAILABLE,
+    }
+)
+
+
 async def run_e2e_evaluation(
     dataset: EvaluationDataset,
     answers: GroundedAnswerService,
@@ -204,6 +222,9 @@ async def run_e2e_evaluation(
     delay_seconds: float = 0.0,
     sleeper: Sleeper | None = None,
     guard: QuestionGuard | None = None,
+    completed: Sequence[E2ERecord] = (),
+    on_record: Callable[[tuple[E2ERecord, ...]], None] | None = None,
+    pause_on_last_question: bool = False,
 ) -> E2EReport:
     """Ask every question once and record the whole pass.
 
@@ -224,10 +245,24 @@ async def run_e2e_evaluation(
     on (`evaluation.operations`): a provider that said no more, one that keeps
     failing, a run heading past the budget. When it says stop, no further
     question is asked and the report is the partial one, marked aborted.
+
+    **Resuming.** *completed* are the records of questions an earlier segment
+    of the same logical run already finished — the first questions of the
+    dataset, in order. They are not asked again: no embedding, no search, no
+    generation. The report holds them followed by the questions asked now.
+    *on_record* is called with every record so far after each question the
+    guard let the run continue past, so a checkpoint can be written before the
+    next one starts. With *pause_on_last_question*, a provider stop on the last
+    question ends the run as aborted like on any other, so that question can be
+    asked again rather than standing as the provider's failure.
     """
     validate_question_delay(delay_seconds)
-    records: list[E2ERecord] = []
-    for position, question in enumerate(dataset.questions):
+    ids = [question.id for question in dataset.questions]
+    done = [record.question.id for record in completed]
+    if done != ids[: len(done)]:
+        raise ValueError("completed records must be the dataset's first questions, in order")
+    records: list[E2ERecord] = list(completed)
+    for position, question in enumerate(dataset.questions[len(done) :]):
         await _pause_between(position, delay_seconds, sleeper)
         started = time.perf_counter()
         try:
@@ -237,6 +272,11 @@ async def run_e2e_evaluation(
             # A failed generation says why, and what had been retrieved before
             # it failed. Any other failure carries neither.
             generation = exc if isinstance(exc, GenerationUnavailableError) else None
+            retrieval_failure = (
+                exc.failure
+                if isinstance(exc, (QueryEmbeddingError, RetrievalUnavailableError))
+                else None
+            )
             records.append(
                 errored_record(
                     question,
@@ -245,6 +285,7 @@ async def run_e2e_evaluation(
                     retrieval=generation.retrieval if generation else None,
                     failure=generation.failure if generation else None,
                     provider_calls=generation.provider_calls if generation else (),
+                    retrieval_failure=retrieval_failure,
                 )
             )
         except Exception as exc:  # an internal defect: stop, keep what was measured
@@ -260,9 +301,11 @@ async def run_e2e_evaluation(
             duration = round(time.perf_counter() - started, 4)
             records.append(score_answer(question, answer, duration_seconds=duration))
 
-        is_last = position == len(dataset.questions) - 1
+        is_last = len(records) == len(dataset.questions)
         reason = guard.observe(records[-1]) if guard is not None else None
-        if reason is not None and not is_last:
+        if reason is not None and (
+            not is_last or (pause_on_last_question and reason in _INTERRUPTING)
+        ):
             _logger.warning(
                 "evaluation stopped by its guard",
                 extra={"question_id": question.id, "reason": reason.value},
@@ -270,6 +313,8 @@ async def run_e2e_evaluation(
             return E2EReport(
                 records=tuple(records), aborted=RunAbort(question_id=question.id, reason=reason)
             )
+        if on_record is not None:
+            on_record(tuple(records))
     return E2EReport(records=tuple(records))
 
 

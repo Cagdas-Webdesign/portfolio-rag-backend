@@ -28,6 +28,7 @@ from portfolio_rag.cli import (
 )
 from portfolio_rag.core.config import EmbeddingProviderName, LLMProviderName, get_settings
 from portfolio_rag.core.request_context import get_request_id
+from portfolio_rag.evaluation.canary import CanaryResult, CanaryStatus
 from portfolio_rag.infrastructure.llm import DeterministicLLMProvider
 from portfolio_rag.ports.errors import LLMProviderError, ProviderFailureKind
 from portfolio_rag.rag.policy import DEFAULT_TOP_K
@@ -542,6 +543,15 @@ def real_provider_names(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     # A test run is not a provider run: its ledger and history stay in the test.
     monkeypatch.setattr(cli, "DEFAULT_LEDGER", tmp_path / "ledger.jsonl")
     monkeypatch.setattr(cli, "DEFAULT_HISTORY", tmp_path / "history")
+    # The offline stub is not a provider that can be health-checked: the canary
+    # is answered at its CLI seam (its own behaviour is unit-tested), and the
+    # acceptance pacing default does not make the offline run wait.
+    monkeypatch.setattr(cli, "run_canary", _passing_canary)
+    monkeypatch.setattr(cli, "ACCEPTANCE_PROVIDER_CALL_DELAY_SECONDS", 0.0)
+
+
+async def _passing_canary(llm: Any) -> CanaryResult:
+    return CanaryResult(status=CanaryStatus.PASS, input_tokens=30, output_tokens=12)
 
 
 @pytest.mark.parametrize(
@@ -1166,8 +1176,18 @@ def test_a_rate_limit_stops_the_run_writes_what_it_measured_and_never_restarts(
     data = _read_json(target)
     assert data["run"]["complete"] is False
     assert data["run"]["aborted"]["reason"] == "rate_limited"
-    assert len(data["questions"]) == 1
-    entry = json.loads((tmp_path / "ledger.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    # The question the 429 cut short is not a question failure: it was not
+    # completed, it is recorded as interrupted, and a resume asks it again.
+    assert data["questions"] == []
+    first = data["run"]["aborted"]["question_id"]
+    (segment,) = data["run"]["execution_segments"]
+    assert segment["interrupted_question_ids"] == [first]
+    assert (segment["calls"], segment["interrupted_calls"]) == (1, 1)
+    assert [event["question_id"] for event in data["run"]["rate_limit_events"]] == [first]
+    entries = [
+        json.loads(line) for line in (tmp_path / "ledger.jsonl").read_text("utf-8").splitlines()
+    ]
+    (entry,) = [entry for entry in entries if entry["tier"] == "acceptance"]
     assert (entry["status"], entry["abort_reason"]) == ("aborted", "rate_limited")
 
 

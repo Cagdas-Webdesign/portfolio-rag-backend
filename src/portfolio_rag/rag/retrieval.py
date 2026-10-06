@@ -47,7 +47,11 @@ from portfolio_rag.ports.vector_store import VectorMatch, VectorQuery, VectorSto
 from portfolio_rag.rag.errors import (
     EmbeddingSpaceMismatchError,
     QueryEmbeddingError,
+    RetrievalFailure,
+    RetrievalStage,
     RetrievalUnavailableError,
+    embedding_failure,
+    vector_store_failure,
 )
 from portfolio_rag.rag.policy import DEFAULT_RETRIEVAL_POLICY, RetrievalPolicy
 from portfolio_rag.rag.query import UserQuery, build_query_embedding_text
@@ -176,15 +180,15 @@ class PublicRetrievalService:
             results = await self._embeddings.embed([EmbeddingInput(id=_QUERY_INPUT_ID, text=text)])
         except EmbeddingProviderError as exc:
             _logger.warning("query embedding failed", extra={"reason": exc.describe()})
-            raise QueryEmbeddingError from exc
+            raise _embedding_error(embedding_failure(exc)) from exc
 
         if len(results) != 1 or results[0].id != _QUERY_INPUT_ID:
             _logger.warning("query embedding returned an unusable batch")
-            raise QueryEmbeddingError
+            raise _embedding_error(_lasting(RetrievalStage.EMBEDDING, "unusable_batch"))
         vector = results[0].vector
         if len(vector) != self._embeddings.spec.dimensions:
             _logger.warning("query embedding has the wrong dimensionality")
-            raise QueryEmbeddingError
+            raise _embedding_error(_lasting(RetrievalStage.EMBEDDING, "wrong_dimensionality"))
         return vector
 
     async def _search(
@@ -199,7 +203,7 @@ class PublicRetrievalService:
             return await self._store.query(query)
         except VectorStoreError as exc:
             _logger.warning("vector search failed", extra={"reason": exc.describe()})
-            raise RetrievalUnavailableError from exc
+            raise _unavailable(vector_store_failure(exc)) from exc
 
     async def _resolve(
         self, matches: Sequence[VectorMatch]
@@ -212,7 +216,9 @@ class PublicRetrievalService:
             chunks = await self._resolver.resolve([match.record.id for match in matches])
         except Exception as exc:  # a resolver is I/O-backed in every real setup
             _logger.warning("chunk resolution failed", extra={"reason": type(exc).__name__})
-            raise RetrievalUnavailableError from exc
+            raise _unavailable(
+                _lasting(RetrievalStage.CHUNK_RESOLUTION, type(exc).__name__)
+            ) from exc
 
         by_id: dict[str, KnowledgeChunk] = {chunk.id: chunk for chunk in chunks}
         retrieved: list[RetrievedChunk] = []
@@ -248,3 +254,20 @@ class PublicRetrievalService:
                 extra={"index_space": index_spec.identity, "query_space": query_spec.identity},
             )
             raise EmbeddingSpaceMismatchError
+
+
+def _lasting(stage: RetrievalStage, detail: str) -> RetrievalFailure:
+    """A retrieval failure that asking again would not change."""
+    return RetrievalFailure(stage=stage, transient=False, detail=detail)
+
+
+def _embedding_error(failure: RetrievalFailure) -> QueryEmbeddingError:
+    error = QueryEmbeddingError()
+    error.failure = failure
+    return error
+
+
+def _unavailable(failure: RetrievalFailure) -> RetrievalUnavailableError:
+    error = RetrievalUnavailableError()
+    error.failure = failure
+    return error

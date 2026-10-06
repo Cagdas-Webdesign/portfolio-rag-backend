@@ -33,11 +33,27 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from portfolio_rag.evaluation.checkpoint import (
+    PROCESS_INTERRUPTION_LIMIT_PER_QUESTION,
+    over_interruption_limit,
+    segment_problems,
+)
 from portfolio_rag.evaluation.e2e import E2E_FORMAT_VERSION, GATES, INTERNAL_LABEL, E2EFailure
 
-#: The version of the rules below. Recorded in every artifact; an artifact
-#: written under another version is not judged by these rules.
-ACCEPTANCE_PROTOCOL_VERSION: Final = "release-acceptance-v1"
+#: The version of the rules below. Recorded in every artifact; an artifact is
+#: judged by the version it was written under.
+#:
+#: ``v2`` adds one condition to ``v1``: an acceptance-tier artifact records its
+#: execution segments — one for an uninterrupted run, several for a run that
+#: was paused and resumed — and they are consistent with the artifact
+#: (:func:`~portfolio_rag.evaluation.checkpoint.segment_problems`). Gates,
+#: reasons and every ``v1`` condition are unchanged.
+ACCEPTANCE_PROTOCOL_VERSION: Final = "release-acceptance-v2"
+
+#: The protocol before resumable runs, still used to judge artifacts written
+#: under it.
+ACCEPTANCE_PROTOCOL_V1: Final = "release-acceptance-v1"
+SUPPORTED_PROTOCOLS: Final = frozenset({ACCEPTANCE_PROTOCOL_V1, ACCEPTANCE_PROTOCOL_VERSION})
 
 #: The only tier whose run can be a release acceptance.
 ACCEPTANCE_TIER: Final = "acceptance"
@@ -92,7 +108,9 @@ def source_identity(files: Iterable[tuple[str, bytes]]) -> str:
 #: Abort reasons that are the provider's, not this code's or this budget's.
 #: Only a run that failed for one of these, or only on availability, may be
 #: rerun once without a new commit.
-PROVIDER_ABORT_REASONS: Final = frozenset({"rate_limited", "systemic_provider_failure"})
+PROVIDER_ABORT_REASONS: Final = frozenset(
+    {"rate_limited", "systemic_provider_failure", "retrieval_unavailable"}
+)
 
 #: The safety invariants frozen for the release, each with the existing tests
 #: that hold it. Referenced in every artifact by name; a test asserts every
@@ -251,12 +269,18 @@ def missing_provenance(payload: Mapping[str, Any]) -> list[str]:
     return missing
 
 
-def assess(payload: Mapping[str, Any]) -> dict[str, Any]:
+def assess(
+    payload: Mapping[str, Any], *, protocol: str = ACCEPTANCE_PROTOCOL_VERSION
+) -> dict[str, Any]:
     """Decide whether *payload* is a passing release acceptance.
 
     Every condition is named and reported, so a FAIL says which rule it broke.
     PASS needs all of them: there is no partial pass and no weighting.
+    *protocol* is the rule set; the validator passes the one an artifact was
+    written under.
     """
+    if protocol not in SUPPORTED_PROTOCOLS:
+        raise ValueError(f"unknown acceptance protocol {protocol!r}")
     run = payload.get("run") or {}
     questions = payload.get("questions") or []
     gates = recomputed_gates(payload)
@@ -274,13 +298,22 @@ def assess(payload: Mapping[str, Any]) -> dict[str, Any]:
         "gates_pass": all(gates[name] for name in RELEASE_GATES),
         "no_internal_leaks": leaks == 0,
     }
+    over_limit: list[str] = []
+    if protocol != ACCEPTANCE_PROTOCOL_V1:
+        conditions["execution_segments_consistent"] = run.get(
+            "tier"
+        ) != ACCEPTANCE_TIER or not segment_problems(payload)
+        over_limit = over_interruption_limit(run.get("execution_segments") or [])
+        conditions["process_interruptions_within_limit"] = not over_limit
     reasons = [_REASONS[name] for name, ok in conditions.items() if not ok]
+    if over_limit:
+        reasons.append(f"interrupted by the process more than once: {', '.join(over_limit)}")
     if missing:
         reasons.append(f"missing provenance: {', '.join(missing)}")
     reasons += [f"gate {name} FAIL" for name in RELEASE_GATES if not gates[name]]
 
     return {
-        "protocol": ACCEPTANCE_PROTOCOL_VERSION,
+        "protocol": protocol,
         "verdict": "PASS" if all(conditions.values()) else "FAIL",
         "conditions": conditions,
         "reasons": reasons,
@@ -311,6 +344,15 @@ _REASONS: Final = {
     "clean_tree": "the working tree was not clean (or its state is unknown)",
     "gates_pass": "an acceptance gate failed",
     "no_internal_leaks": "internal content leaked",
+    "process_interruptions_within_limit": (
+        "a question was cut short by a process interruption more than "
+        f"{PROCESS_INTERRUPTION_LIMIT_PER_QUESTION} time(s); re-asking a question until it "
+        "looks right is not a release acceptance"
+    ),
+    "execution_segments_consistent": (
+        "the execution segments are missing or contradict the artifact (identity, order, "
+        "completeness, pauses or usage)"
+    ),
 }
 
 
@@ -339,6 +381,11 @@ class AcceptanceCheck:
     @property
     def consistent(self) -> bool:
         return not self.problems
+
+    state: str | None = None
+    """``VALID_COMPLETE``, ``VALID_INCOMPLETE`` — a paused or stopped run
+    whose recorded questions are an exact prefix of its suite — or
+    ``INVALID``. Incomplete is never PASS."""
 
     def accepted(self, *, publication: bool) -> bool:
         """For publication: consistent *and* PASS. For development: consistent."""
@@ -370,12 +417,21 @@ def validate_artifact(payload: Any, *, secrets: Iterable[str] = ()) -> Acceptanc
         return AcceptanceCheck(None, (), ("`questions` is not a list of objects",))
     problems += _consistency_problems(payload)
     problems += _leak_problems(payload, secrets)
+    if payload["run"].get("execution_segments") is not None:
+        # A resumed run is one logical run: every question exactly once, in
+        # order, under one identity, its pauses resolved, its usage adding up.
+        problems += segment_problems(payload)
 
-    recomputed = assess(payload)
     stored = payload["release_acceptance"]
-    if not isinstance(stored, dict) or stored.get("protocol") != ACCEPTANCE_PROTOCOL_VERSION:
+    protocol = stored.get("protocol") if isinstance(stored, dict) else None
+    recomputed = assess(
+        payload,
+        protocol=protocol if protocol in SUPPORTED_PROTOCOLS else ACCEPTANCE_PROTOCOL_VERSION,
+    )
+    if not isinstance(stored, dict) or protocol not in SUPPORTED_PROTOCOLS:
         problems.append(
-            f"release_acceptance was not written under protocol {ACCEPTANCE_PROTOCOL_VERSION!r}"
+            "release_acceptance was not written under a known protocol "
+            f"({', '.join(sorted(SUPPORTED_PROTOCOLS))})"
         )
     else:
         for key in ("verdict", "conditions", "gates"):
@@ -383,10 +439,19 @@ def validate_artifact(payload: Any, *, secrets: Iterable[str] = ()) -> Acceptanc
                 problems.append(
                     f"release_acceptance.{key} does not match what the artifact's own data says"
                 )
+    run = payload["run"]
+    state = (
+        "INVALID"
+        if problems
+        else "VALID_COMPLETE"
+        if run.get("complete") is True
+        else "VALID_INCOMPLETE"
+    )
     return AcceptanceCheck(
         verdict=recomputed["verdict"],
         reasons=tuple(recomputed["reasons"]),
         problems=tuple(problems),
+        state=state,
     )
 
 
@@ -399,7 +464,7 @@ def _consistency_problems(payload: Mapping[str, Any]) -> list[str]:
     ids = [question.get("id") for question in questions]
     if len(set(ids)) != len(ids):
         problems.append("a question id appears more than once")
-    if run.get("question_count") != len(questions):
+    if run.get("question_count") != len(questions) and not _valid_prefix(run, ids):
         problems.append(
             f"question_count is {run.get('question_count')!r}, "
             f"but {len(questions)} questions are recorded"
@@ -443,6 +508,19 @@ def _consistency_problems(payload: Mapping[str, Any]) -> list[str]:
     }:
         problems.append("the failure index does not match the questions' recorded failures")
     return problems
+
+
+def _valid_prefix(run: Mapping[str, Any], ids: Sequence[Any]) -> bool:
+    """A run that stopped early, recording exactly the first questions of the
+    suite it planned: incomplete, and not corrupt. Only a checkpointed run
+    records its plan; an older partial export cannot show it."""
+    planned = run.get("planned_question_ids")
+    return (
+        run.get("complete") is False
+        and isinstance(planned, list)
+        and run.get("question_count") == len(planned)
+        and list(ids) == planned[: len(ids)]
+    )
 
 
 def _count(values: Iterable[Any]) -> dict[str, int]:
@@ -580,6 +658,7 @@ def rerun_blockers(
     dirty: bool | None,
     rerun_of: str | None,
     source_identity: str | None = None,
+    resuming: str | None = None,
 ) -> list[str]:
     """Why an acceptance run may not start under the no-rerun-until-green rule.
 
@@ -589,7 +668,16 @@ def rerun_blockers(
     is a new source identity, a new candidate, and starts fresh; a new commit
     that changed only run outputs is not. A dirty tree is a development run:
     it is not counted and can never be published.
+
+    *resuming* names a logical run being continued. Its own earlier segments
+    are that same attempt, not an earlier one, so they do not block it; a
+    finished logical run is not continued.
     """
+    if resuming is not None:
+        own = [attempt for attempt in attempts if attempt.run_id == resuming]
+        if any(attempt.status == "complete" for attempt in own):
+            return [f"logical run {resuming} is complete; a finished run is not continued"]
+        attempts = [attempt for attempt in attempts if attempt.run_id != resuming]
     if dirty is not False or commit is None:
         if rerun_of is not None:
             return ["--rerun-of applies to a clean commit; this tree is dirty or unknown"]

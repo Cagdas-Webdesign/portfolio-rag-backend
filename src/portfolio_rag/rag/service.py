@@ -79,7 +79,12 @@ from portfolio_rag.rag.failure_policy import (
     may_recover,
     needs_larger_output,
 )
-from portfolio_rag.rag.generation import GroundedAnswerDraft, SupportVerdict, parse_generation
+from portfolio_rag.rag.generation import (
+    GroundedAnswerDraft,
+    SupportVerdict,
+    cut_off_json,
+    parse_generation,
+)
 from portfolio_rag.rag.language import (
     INSUFFICIENT_KNOWLEDGE_ANSWERS,
     AnswerLanguage,
@@ -538,6 +543,7 @@ class GroundedAnswerService:
                         response,
                     ),
                     finish_reason=response.finish_reason,
+                    cut_off=cut_off_json(response.text),
                 )
                 calls.append(
                     self._observe(
@@ -645,6 +651,7 @@ class GroundedAnswerService:
                     response,
                 ),
                 finish_reason=response.finish_reason,
+                cut_off=cut_off_json(response.text),
             )
             calls.append(
                 self._observe(
@@ -785,6 +792,7 @@ class GroundedAnswerService:
             elapsed_seconds=failed.elapsed_seconds,
             failure=failure,
             max_output_tokens=request.max_output_tokens,
+            call_failure=failed.failure,
         )
 
     @staticmethod

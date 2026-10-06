@@ -150,20 +150,29 @@ def needs_larger_output(failure: GenerationFailure) -> bool:
     cap is the likeliest reason for the same failure. Any other recoverable
     failure is asked again as it was.
     """
-    return failure.finish_reason == TRUNCATED_FINISH_REASON
+    return (
+        failure.finish_reason == TRUNCATED_FINISH_REASON
+        or failure.category is GenerationFailureCategory.OUTPUT_TRUNCATED
+    )
 
 
 def classify_unusable_reply(
-    failure: GenerationFailure, *, finish_reason: str | None
+    failure: GenerationFailure, *, finish_reason: str | None, cut_off: bool = False
 ) -> GenerationFailure:
     """Place a reply the contract rejected: truncated at the limit, or not.
 
     *failure* is what the contract reported — its rule is kept as the detail.
-    Precedence 3 and 4 of the module docstring.
+    Precedence 3 and 4 of the module docstring. A reply is truncated when the
+    provider says it stopped at the limit, or — when the provider says
+    nothing about why it stopped — when the reply itself is a JSON object
+    that never closes (*cut_off*, :func:`~portfolio_rag.rag.generation.cut_off_json`).
+    A finish reason other than the limit is believed: a reply that says it
+    finished and broke the contract is unparseable, however it ends.
     """
+    truncated = finish_reason == TRUNCATED_FINISH_REASON or (finish_reason is None and cut_off)
     category = (
         GenerationFailureCategory.OUTPUT_TRUNCATED
-        if finish_reason == TRUNCATED_FINISH_REASON
+        if truncated
         else GenerationFailureCategory.UNPARSEABLE_OUTPUT
     )
     return replace(failure, category=category)
