@@ -15,13 +15,16 @@ import json
 import os
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
 from portfolio_rag.evaluation import E2EReport, export_e2e, run_e2e_evaluation
 from portfolio_rag.evaluation.acceptance import (
+    ACCEPTANCE_PROTOCOL_V1,
+    ACCEPTANCE_PROTOCOL_VERSION,
     _leak_problems,
+    assess,
     validate_artifact,
     with_release_acceptance,
 )
@@ -447,15 +450,35 @@ def test_a_resumed_run_can_be_a_release_acceptance():
     assert payload["release_acceptance"]["conditions"]["execution_segments_consistent"]
 
 
+#: A release-acceptance-v1 artifact, versioned with the tests: the v1.1.1 release
+#: acceptance (run 18b71d70) reduced to what the validator reads — its run header,
+#: gates, failure index, outcome counts, per-question outcome and failures, and the
+#: stored verdict — without answers, retrieval or telemetry.
+V1_ARTIFACT: Final = (
+    Path(__file__).resolve().parents[1] / "fixtures/acceptance/release-acceptance-v1.json"
+)
+
+
 def test_a_v1_artifact_is_still_judged_by_v1():
-    path = Path("evaluation/results/release-acceptance-v1.1.1-final.json")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(V1_ARTIFACT.read_text(encoding="utf-8"))
+    assert payload["release_acceptance"]["protocol"] == ACCEPTANCE_PROTOCOL_V1
+    assert "execution_segments" not in payload["run"], "written before resumable runs"
 
     check = validate_artifact(payload)
 
     assert check.consistent
     assert check.verdict == "FAIL"
     assert "gate no_pipeline_errors FAIL" in check.reasons
+    # Judged by the rules it was written under: under v2 the same artifact
+    # would lack the execution segments v2 requires, and its stored conditions
+    # would no longer be the recomputed ones.
+    assert (
+        assess(payload, protocol=ACCEPTANCE_PROTOCOL_V1)["conditions"]
+        == (payload["release_acceptance"]["conditions"])
+    )
+    v2 = assess(payload, protocol=ACCEPTANCE_PROTOCOL_VERSION)
+    assert v2["conditions"]["execution_segments_consistent"] is False
+    assert v2["conditions"] != payload["release_acceptance"]["conditions"]
 
 
 # --- budget for what is left --------------------------------------------------------
