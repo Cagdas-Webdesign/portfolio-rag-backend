@@ -530,3 +530,63 @@ def test_the_leak_gate_catches_every_form_presentation_removes(leak: str):
 @pytest.mark.parametrize("text", ["Audi S3 und Stufe S2.", "Release S1.2, S3-Bucket."])
 def test_the_leak_gate_does_not_flag_ordinary_prose(text: str):
     assert not INTERNAL_LABEL.search(text)
+
+
+# --- content is kept, only the reference goes (v1.2.1) ------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Laut Quellen S1 und S2 nutzt er FastAPI.", "Er nutzt FastAPI."),
+        (
+            "Nach den Quellen S2 und S3 arbeitet er mit FastAPI und Vectorize.",
+            "Er arbeitet mit FastAPI und Vectorize.",
+        ),
+        ("According to sources S1 and S2, he uses FastAPI.", "He uses FastAPI."),
+        (
+            "Laut Quellen S1 und S2 nutzt das Backend FastAPI.",
+            "Laut Quellen nutzt das Backend FastAPI.",
+        ),
+        (
+            "Er nutzt FastAPI, wie in den Quellen S1 und S2 beschrieben.",
+            "Er nutzt FastAPI, wie in den Quellen beschrieben.",
+        ),
+    ],
+)
+def test_a_sentence_with_content_keeps_it_and_loses_the_reference(text: str, expected: str):
+    presented, _ = present(text)
+
+    assert presented.answer == expected
+
+
+@pytest.mark.parametrize(
+    "meta",
+    ["Quellen S1, S2 und S3.", "Diese Aussage wird durch S1 und S2 belegt.", "Quellen S1 und S2."],
+)
+def test_a_sentence_that_is_only_a_reference_is_removed(meta: str):
+    presented, _ = present(f"Er nutzt FastAPI. {meta}")
+
+    assert presented.answer == "Er nutzt FastAPI."
+
+
+def test_unverified_marks_inside_a_sentence_leave_it_intact():
+    presented, _ = present("FastAPI [S2] und Vectorize [S3] werden eingesetzt.")
+
+    assert presented.answer == "FastAPI und Vectorize werden eingesetzt."
+
+
+@pytest.mark.parametrize(
+    "text", ["Audi S3 ist ein Fahrzeugmodell.", "Die API verwendet S3-Bucket-Kompatibilität."]
+)
+def test_product_names_are_not_references(text: str):
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == text
+
+
+def test_keeping_content_does_not_touch_citations_or_numbering():
+    presented, outcome = present("Laut Quellen S1 und S2 nutzt er FastAPI [S1].", "S1", "S2")
+
+    assert presented.answer == "Er nutzt FastAPI [1]."
+    assert presented.citations == outcome.citations

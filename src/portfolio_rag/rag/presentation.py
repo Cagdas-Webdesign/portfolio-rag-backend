@@ -36,8 +36,10 @@ mark at all and is removed outright; the reader was never meant to see it.
 A sentence that only talks *about* labels — ``Diese Schritte werden in den
 Quellen S2 (…) und S1 (…) beschrieben.`` — is removed whole (v1.2.1). It tells
 the reader nothing the citation list does not, and with its labels cut out it
-would no longer be a sentence. Removing text can never admit a source; if it
-would leave nothing at all, only the labels go and the sentence stays.
+would no longer be a sentence. A sentence that also says something keeps it:
+``Laut Quellen S1 und S2 nutzt er FastAPI.`` becomes ``Er nutzt FastAPI.``.
+Removing text can never admit a source; if it would leave nothing at all, only
+the labels go and the sentence stays.
 """
 
 from __future__ import annotations
@@ -102,6 +104,103 @@ _LABEL_REFERENCE: Final = re.compile(
     rf"|{_DESCRIBED_LABEL}(?:{_LIST_JOIN}{_DESCRIBED_LABEL})+)"
 )
 _SOURCE_WORD: Final = re.compile(r"\b(?:Quellen?|Quellenangaben?|[Ss]ources?|SOURCES?)\b")
+
+#: Words that only talk about sources. A sentence whose words outside its label
+#: references are all from here says nothing of its own and is removed whole;
+#: one with any other word carries content and keeps it.
+_META_WORDS: Final = frozenset(
+    {
+        "diese",
+        "dieser",
+        "dieses",
+        "die",
+        "der",
+        "das",
+        "den",
+        "dem",
+        "des",
+        "ein",
+        "eine",
+        "einer",
+        "aussage",
+        "aussagen",
+        "angabe",
+        "angaben",
+        "information",
+        "informationen",
+        "schritt",
+        "schritte",
+        "detail",
+        "details",
+        "inhalt",
+        "inhalte",
+        "wird",
+        "werden",
+        "ist",
+        "sind",
+        "steht",
+        "stehen",
+        "findet",
+        "finden",
+        "man",
+        "sich",
+        "in",
+        "im",
+        "aus",
+        "durch",
+        "von",
+        "bei",
+        "laut",
+        "nach",
+        "gemäß",
+        "siehe",
+        "vgl",
+        "entsprechend",
+        "wie",
+        "und",
+        "oder",
+        "sowie",
+        "auch",
+        "belegt",
+        "beschrieben",
+        "genannt",
+        "erwähnt",
+        "aufgeführt",
+        "dokumentiert",
+        "bestätigt",
+        "nachzulesen",
+        "see",
+        "the",
+        "these",
+        "this",
+        "that",
+        "is",
+        "are",
+        "by",
+        "from",
+        "as",
+        "and",
+        "or",
+        "also",
+        "described",
+        "supported",
+        "mentioned",
+        "listed",
+        "documented",
+        "confirmed",
+    }
+)
+
+#: A source reference fronting a sentence: ``Laut Quellen S1 und S2``, ``Nach
+#: den Quellen S2 und S3,``, ``According to sources S1 and S2,``.
+_FRONTED_REFERENCE: Final = re.compile(
+    r"^(?P<intro>Laut|Nach|Gemäß|Entsprechend|According to)[ \t]+"
+    r"(?:den[ \t]+|der[ \t]+|the[ \t]+)?"
+    rf"(?:{_LABEL_REFERENCE.pattern})[ \t]*,?[ \t]*"
+)
+#: German puts the verb second, so with the fronted phrase gone the verb
+#: leads: ``nutzt er …``. Only a personal pronoun is safe to move in front.
+_VERB_THEN_PRONOUN: Final = re.compile(r"^(?P<verb>\w+)[ \t]+(?P<pronoun>er|sie|es|man|wir|ich)\b")
 
 #: A sentence: ends at ``.``, ``!`` or ``?`` followed by a blank or the end of
 #: the line — so ``3.12`` and ``z.B.`` inside a sentence do not end it.
@@ -190,7 +289,10 @@ def _labels_to_citations(
 
 
 def _drop_label_references(answer: str) -> str:
-    """Remove every sentence that refers to the context by its labels.
+    """Remove internal labels referred to in prose, keeping what is said.
+
+    A sentence that is only a reference is removed; one that also carries
+    content loses the reference and keeps the content.
 
     Runs before renumbering, so a mark in a removed sentence is never numbered
     and the numbers the reader sees stay dense. A line whose sentences are all
@@ -204,18 +306,52 @@ def _drop_label_references(answer: str) -> str:
             lines.append(line)
             continue
         indent = line[: len(line) - len(line.lstrip(" \t"))]
-        kept = [
-            sentence.group(0).strip()
-            for sentence in _SENTENCE.finditer(line)
-            if sentence.group(0).strip() and not _LABEL_REFERENCE.search(sentence.group(0))
-        ]
+        kept: list[str] = []
+        for match in _SENTENCE.finditer(line):
+            sentence = match.group(0).strip()
+            if not sentence:
+                continue
+            if not _LABEL_REFERENCE.search(sentence):
+                kept.append(sentence)
+            elif not _is_source_meta(sentence):
+                kept.append(_strip_reference(sentence))
         if kept:
             lines.append(indent + " ".join(kept))
     presented = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n")
     if presented.strip():
         return presented
     # Every sentence was a reference: keep the prose, lose only the labels.
-    stripped = _LABEL_REFERENCE.sub(_strip_labels, answer)
+    return _strip_labels_only(answer)
+
+
+def _is_source_meta(sentence: str) -> bool:
+    """Whether *sentence* says nothing beyond which labels stand behind it."""
+    residue = _LABEL_REFERENCE.sub(" ", sentence)
+    return all(word in _META_WORDS for word in re.findall(r"\w+", residue.lower()))
+
+
+def _strip_reference(sentence: str) -> str:
+    """Keep what *sentence* says and drop the labels it says it with.
+
+    A fronted reference goes entirely, and a German sentence gets its pronoun
+    back in front of the verb. Where that cannot be done safely, the source
+    word stays and only the labels go — ``Laut Quellen nutzt das Backend …``
+    is still a sentence.
+    """
+    fronted = _FRONTED_REFERENCE.match(sentence)
+    if fronted is not None:
+        rest = sentence[fronted.end() :]
+        if fronted.group("intro") == "According to" and rest:
+            return rest[0].upper() + rest[1:]
+        swapped = _VERB_THEN_PRONOUN.match(rest)
+        if swapped is not None:
+            pronoun = swapped.group("pronoun").capitalize()
+            return f"{pronoun} {swapped.group('verb')}{rest[swapped.end() :]}"
+    return _strip_labels_only(sentence)
+
+
+def _strip_labels_only(text: str) -> str:
+    stripped = _LABEL_REFERENCE.sub(_strip_labels, text)
     stripped = re.sub(r"[ \t]+(?=[.,;:!?])", "", stripped)
     return re.sub(r"(?<=\S)[ \t]{2,}", " ", stripped)
 
