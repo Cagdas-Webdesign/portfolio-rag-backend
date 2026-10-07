@@ -94,7 +94,15 @@ E2E_FORMAT_VERSION: Final = "e2e-eval-v3"
 
 #: An internal source label as the context writes it. One in a published answer
 #: means presentation let something through that a reader was never meant to see.
-INTERNAL_LABEL: Final = re.compile(r"\[S\d+\]|\(S\d+(?:\s*,\s*S\d+)*\)|\bSOURCE S\d+\b")
+#: Besides ``[S1]``, ``(S1, S2)`` and ``SOURCE S1``: several labels in one
+#: bracket, a source word followed by a label (``Quellen S1``), and a list of
+#: bare labels (``S2, S3 und S5``) — the forms presentation removes since v1.2.1.
+INTERNAL_LABEL: Final = re.compile(
+    r"\[S\d+(?:\s*[,;]\s*S\d+)*\]"
+    r"|\(S\d+(?:\s*,\s*S\d+)*\)"
+    r"|\b(?:SOURCES?|[Ss]ources?|Quellen?|Quellenangaben?)\s*:?\s*S\d+\b"
+    r"|(?<![\w/\-\[(])S\d+(?:\s*\([^()\n]*\))?(?:\s*(?:,|;|&|\bund\b|\band\b)\s*S\d+\b)+"
+)
 
 #: A citation mark as a reader sees it: ``[1]``, ``[2]``.
 _PUBLIC_MARK: Final = re.compile(r"\[(\d+)\]")

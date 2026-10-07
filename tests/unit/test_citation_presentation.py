@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from portfolio_rag.domain.retrieval import RetrievedChunk
+from portfolio_rag.evaluation.e2e import INTERNAL_LABEL
 from portfolio_rag.rag.citations import resolve_citations
 from portfolio_rag.rag.context import GroundedContext, build_context
 from portfolio_rag.rag.presentation import present_answer
@@ -416,3 +417,116 @@ def test_legitimate_text_is_not_mistaken_for_a_label(text: str):
     presented, _ = present(text, "S1")
 
     assert presented.answer == text
+
+
+# --- labels referred to in prose (v1.2.1) -------------------------------------
+#
+# A model that talks *about* its context — `Quellen S2, S1 und S3`, `[S2, S3]`,
+# `S2, S3 und S5` — writes forms the earlier rules did not know. None of them
+# may reach the reader; the citation list is not touched by any of this.
+
+
+def test_unverified_marks_in_running_text_leave_clean_prose():
+    presented, _ = present("Er nutzt FastAPI [S2] und Vectorize [S3].")
+
+    assert presented.answer == "Er nutzt FastAPI und Vectorize."
+
+
+def test_a_trailing_row_of_unverified_marks_is_removed():
+    presented, _ = present("Antworttext. [S2] [S3] [S5]")
+
+    assert presented.answer == "Antworttext."
+
+
+def test_verified_marks_in_a_row_become_numbers_not_labels():
+    presented, _ = present("Antworttext. [S2] [S3] [S5]", "S2", "S3", "S5")
+
+    assert presented.answer == "Antworttext. [1] [2] [3]"
+    assert len(presented.citations) == 3
+
+
+def test_several_labels_in_one_bracket_are_handled_one_by_one():
+    presented, _ = present("FastAPI und Vectorize [S2, S3].", "S2")
+
+    assert presented.answer == "FastAPI und Vectorize [1]."
+    assert presented.removed_marks == 1
+
+
+def test_a_sentence_that_only_names_sources_is_removed_whole():
+    presented, _ = present(
+        "Er richtet den Dienst ein und testet ihn. Diese Schritte werden in den Quellen "
+        "S2 (Einrichtung), S1 (Deployment) und S3 (Tests) beschrieben."
+    )
+
+    assert presented.answer == "Er richtet den Dienst ein und testet ihn."
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Das steht in S2, S3 und S5.",
+        "Quellen S1, S2, S3.",
+        "Quellen: S1, S2.",
+        "See sources S1 and S2.",
+    ],
+)
+def test_reference_sentences_are_removed_and_the_rest_stays(sentence: str):
+    presented, _ = present(f"Erster Satz.\n\n{sentence}\n\nLetzter Satz.")
+
+    assert presented.answer == "Erster Satz.\n\nLetzter Satz."
+
+
+def test_an_answer_made_only_of_a_reference_keeps_its_prose():
+    """Removing everything would publish an empty answer; only the labels go."""
+    presented, _ = present("Die Schritte sind in den Quellen S1 und S2 beschrieben.")
+
+    assert presented.answer == "Die Schritte sind in den Quellen beschrieben."
+
+
+def test_a_two_digit_bracketed_label_never_survives():
+    presented, _ = present("Quelle [S10] bestätigt dies.")
+
+    assert "[S10]" not in presented.answer
+    assert presented.answer == "Quelle bestätigt dies."
+
+
+def test_removing_reference_sentences_does_not_touch_the_citations():
+    presented, outcome = present("FastAPI [S1]. Siehe Quellen S1 und S2.", "S1", "S2")
+
+    assert presented.answer == "FastAPI [1]."
+    assert presented.citations == outcome.citations
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Er nutzt FastAPI, Python 3.12 und Cloudflare Vectorize.",
+        "Audi S3 und Stufe S2 sind keine Quellen.",
+        "Das Modell S10 ist ein Produkt. Version S1.2 folgt.",
+        "Die Quellen liegen im S3-Bucket.",
+    ],
+)
+def test_text_without_internal_labels_is_unchanged_byte_for_byte(text: str):
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == text
+
+
+@pytest.mark.parametrize(
+    "leak",
+    [
+        "Antwort [S2, S3].",
+        "Diese Schritte werden in den Quellen S2 (A), S1 (B) beschrieben.",
+        "Das steht in S2, S3 und S5.",
+        "Quellen: S1",
+    ],
+)
+def test_the_leak_gate_catches_every_form_presentation_removes(leak: str):
+    assert INTERNAL_LABEL.search(leak)
+    presented, _ = present(f"Satz. {leak}")
+    assert not INTERNAL_LABEL.search(presented.answer)
+
+
+@pytest.mark.parametrize("text", ["Audi S3 und Stufe S2.", "Release S1.2, S3-Bucket."])
+def test_the_leak_gate_does_not_flag_ordinary_prose(text: str):
+    assert not INTERNAL_LABEL.search(text)

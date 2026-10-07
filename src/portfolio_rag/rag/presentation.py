@@ -32,6 +32,12 @@ Three rules, and all three exist to keep the numbers honest:
 
 A label a model wrote as a *name* — ``S1: Ausbildung``, ``(S2)`` — is not a
 mark at all and is removed outright; the reader was never meant to see it.
+
+A sentence that only talks *about* labels — ``Diese Schritte werden in den
+Quellen S2 (…) und S1 (…) beschrieben.`` — is removed whole (v1.2.1). It tells
+the reader nothing the citation list does not, and with its labels cut out it
+would no longer be a sentence. Removing text can never admit a source; if it
+would leave nothing at all, only the labels go and the sentence stays.
 """
 
 from __future__ import annotations
@@ -71,6 +77,35 @@ _LABEL_AS_NAME: Final = re.compile(
 #: Parentheses are not the citation syntax, so there is nothing to renumber.
 #: Not after a ``/``, which is a URL path rather than prose.
 _PARENTHESISED_LABELS: Final = re.compile(r"[ \t]*(?<!/)\(S\d+(?:[ \t]*,[ \t]*S\d+)*\)")
+
+#: Several labels in one bracket — ``[S2, S3]``. Split into single marks so
+#: that each is renumbered or removed exactly like ``[S2] [S3]``.
+_MARK_GROUP: Final = re.compile(r"\[(S\d+(?:[ \t]*[,;][ \t]*S\d+)+)\]")
+_GROUP_SEPARATOR: Final = re.compile(r"[ \t]*[,;][ \t]*")
+
+#: A bare label as a word: not inside another word, a path or a version number,
+#: so ``SS1``, ``S1x``, ``S3-Bucket``, ``/S1`` and ``S1.2`` are not labels. Not
+#: inside brackets or parentheses either — those are marks, handled elsewhere.
+_BARE_LABEL: Final = r"(?<![\w/\-\[(])S\d+(?![\w\-\])]|[.:]\d)"
+#: A bare label with an optional description: ``S2 (Setup)``.
+_DESCRIBED_LABEL: Final = rf"{_BARE_LABEL}(?:[ \t]*\([^()\n]*\))?"
+_LIST_JOIN: Final = r"[ \t]*(?:,|;|&|\bund\b|\bsowie\b|\boder\b|\band\b|\bor\b)[ \t]*"
+
+#: Labels written as a reference in prose, the way a model talks *about* its
+#: context: a source word followed by labels — ``Quellen S1, S2``, ``Quelle:
+#: S3``, ``sources S1 and S2`` — or a list of two or more bare labels —
+#: ``S2, S3 und S5``. A single bare label without a source word is left alone,
+#: because ``Audi S3`` and ``Stufe S2`` are ordinary prose.
+_LABEL_REFERENCE: Final = re.compile(
+    rf"(?:\b(?:Quellen?|Quellenangaben?|[Ss]ources?|SOURCES?)[ \t]*:?[ \t]*{_DESCRIBED_LABEL}"
+    rf"(?:{_LIST_JOIN}{_DESCRIBED_LABEL})*"
+    rf"|{_DESCRIBED_LABEL}(?:{_LIST_JOIN}{_DESCRIBED_LABEL})+)"
+)
+_SOURCE_WORD: Final = re.compile(r"\b(?:Quellen?|Quellenangaben?|[Ss]ources?|SOURCES?)\b")
+
+#: A sentence: ends at ``.``, ``!`` or ``?`` followed by a blank or the end of
+#: the line — so ``3.12`` and ``z.B.`` inside a sentence do not end it.
+_SENTENCE: Final = re.compile(r"(?:[^.!?\n]|[.!?]+(?![ \t]|$))+(?:[.!?]+|$)", re.MULTILINE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +152,12 @@ def present_answer(
             order.append(citation)
         return f"{blanks}[{order.index(citation) + 1}]"
 
-    presented = _MARK.sub(renumber, answer)
+    presented = _MARK_GROUP.sub(
+        lambda match: " ".join(f"[{label}]" for label in _GROUP_SEPARATOR.split(match.group(1))),
+        answer,
+    )
+    presented = _drop_label_references(presented)
+    presented = _MARK.sub(renumber, presented)
     presented = _LABEL_AS_NAME.sub(r"\g<lead>", presented)
     presented = _PARENTHESISED_LABELS.sub("", presented)
 
@@ -147,3 +187,40 @@ def _labels_to_citations(
         if match is not None:
             mapping[source.label] = match
     return mapping
+
+
+def _drop_label_references(answer: str) -> str:
+    """Remove every sentence that refers to the context by its labels.
+
+    Runs before renumbering, so a mark in a removed sentence is never numbered
+    and the numbers the reader sees stay dense. A line whose sentences are all
+    removed goes with them. Text without such a reference is returned as is.
+    """
+    if not _LABEL_REFERENCE.search(answer):
+        return answer
+    lines: list[str] = []
+    for line in answer.split("\n"):
+        if not _LABEL_REFERENCE.search(line):
+            lines.append(line)
+            continue
+        indent = line[: len(line) - len(line.lstrip(" \t"))]
+        kept = [
+            sentence.group(0).strip()
+            for sentence in _SENTENCE.finditer(line)
+            if sentence.group(0).strip() and not _LABEL_REFERENCE.search(sentence.group(0))
+        ]
+        if kept:
+            lines.append(indent + " ".join(kept))
+    presented = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n")
+    if presented.strip():
+        return presented
+    # Every sentence was a reference: keep the prose, lose only the labels.
+    stripped = _LABEL_REFERENCE.sub(_strip_labels, answer)
+    stripped = re.sub(r"[ \t]+(?=[.,;:!?])", "", stripped)
+    return re.sub(r"(?<=\S)[ \t]{2,}", " ", stripped)
+
+
+def _strip_labels(match: re.Match[str]) -> str:
+    """``in den Quellen S1 und S2`` → ``in den Quellen``; a bare list → nothing."""
+    word = _SOURCE_WORD.match(match.group(0))
+    return word.group(0) if word else ""
