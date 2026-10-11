@@ -292,6 +292,7 @@ class GroundedAnswerService:
         *,
         retrieval: PublicRetrievalService,
         llm: LLMProvider,
+        grounding_llm: LLMProvider | None = None,
         context_policy: ContextPolicy = DEFAULT_CONTEXT_POLICY,
         deadline_seconds: float | None = None,
     ) -> None:
@@ -299,6 +300,9 @@ class GroundedAnswerService:
             raise ValueError("deadline_seconds must be positive")
         self._retrieval = retrieval
         self._llm = llm
+        #: A separate port for the grounding check, or ``None``: the generator
+        #: checks its own answers. The same request, parser and rules either way.
+        self._grounding_override = grounding_llm
         self._context_policy = context_policy
         self._deadline_seconds = deadline_seconds
 
@@ -708,7 +712,7 @@ class GroundedAnswerService:
         """
         started = time.perf_counter()
         try:
-            response = await self._llm.generate(request)
+            response = await self._provider_for(step).generate(request)
         except LLMProviderError as exc:
             raise _CallFailedError(
                 provider_failure(exc, step=step),
@@ -726,6 +730,14 @@ class GroundedAnswerService:
                 reason=type(exc).__name__,
             ) from exc
         return response, _seconds_since(started)
+
+    @property
+    def _grounding_llm(self) -> LLMProvider:
+        return self._grounding_override or self._llm
+
+    def _provider_for(self, step: ProviderCallType) -> LLMProvider:
+        """The port a step is sent through: the check may have its own."""
+        return self._grounding_llm if step is ProviderCallType.GROUNDING_CHECK else self._llm
 
     def _deadline_exceeded(self, progress: _Progress) -> Exception:
         """The technical error a request ends as when its deadline passes.
@@ -769,7 +781,7 @@ class GroundedAnswerService:
         return replied_call(
             call_type=step,
             attempt=attempt,
-            model=self._llm.model,
+            model=self._provider_for(step).model,
             response_format=request.response_format,
             elapsed_seconds=elapsed,
             response=response,
@@ -787,7 +799,7 @@ class GroundedAnswerService:
         return failed_call(
             call_type=failure.step,
             attempt=attempt,
-            model=self._llm.model,
+            model=self._provider_for(failure.step).model,
             response_format=request.response_format,
             elapsed_seconds=failed.elapsed_seconds,
             failure=failure,
@@ -862,6 +874,7 @@ class GroundedAnswerService:
                 "unknown_label_count": len(answer.unknown_labels),
                 "embedding_space": self._retrieval.spec.identity,
                 "generation_model": self._llm.model,
+                "grounding_check_model": self._grounding_llm.model,
                 "prompt_version": GROUNDED_PROMPT_VERSION,
                 "conversation_prompt_version": (
                     CONVERSATION_PROMPT_VERSION if not answer.conversation.is_empty else None

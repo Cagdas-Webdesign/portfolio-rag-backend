@@ -24,7 +24,9 @@ git status --short   # is a real .env about to be committed?
 * No credential in code, tests, fixtures, comments, CI, or `.env.example`.
 * `.env` is git-ignored; `.env.example` contains names and harmless placeholders only.
 * No secret in the Docker image — everything comes from the runtime environment.
-* Phase 1 has no credentials at all. A new one appearing is itself worth questioning.
+* The credentials that exist are five `SecretStr` settings read from the environment: the Mistral
+  key, the Cloudflare API and Workers AI tokens, the edge shared secret and the Groq key. A new one
+  appearing is itself worth questioning.
 
 ### 2. Configuration
 
@@ -85,18 +87,17 @@ uv run pytest tests/integration/test_error_contract.py -q
 * Docker runs as a non-root user.
 * Dependencies are pinned by the lockfile; CI installs with `--frozen`.
 
-## Documented for later, not now
+## Built, and absent on purpose
 
-These are Phase 6 (see `docs/ROADMAP.md`). Note them as *deferred*, not as findings, unless the
-change being reviewed actually creates the exposure:
+Built, so a regression is a finding: `visibility: internal` enforced structurally in the retrieval
+query, knowledge kept in the user role and never the system role, citations built only from
+passages the backend retrieved, the grounding check and its fail-closed handling (on whichever
+provider answers it), the 16 KiB body limit, the edge origin guard, and the adversarial and
+hostile-input suites (Phases 5 and 6, see `docs/ROADMAP.md`).
 
-rate limiting · abuse prevention · adversarial prompt-injection testing · request size limits at
-the edge · security headers · authentication for privileged operations.
-
-What is *not* deferred, because Phase 5 built it: `visibility: internal` enforced structurally in
-the retrieval query, knowledge kept in the user role and never the system role, and citations built
-only from passages the backend retrieved. A regression in any of those is a finding, not a Phase 6
-item.
+Absent on purpose, so note them as *deliberate*, not as findings, unless the change being reviewed
+creates the exposure: rate limiting inside this process (it lives at the edge, ADR 0008),
+authentication for users (there are no accounts), and security response headers.
 
 ## Output
 
@@ -107,6 +108,6 @@ exploitation path is theatre.
 * **High** — leaks internals or user content, or lets untrusted input reach somewhere dangerous.
 * **Medium** — a weak default that becomes a real problem in a plausible next step.
 * **Low** — hardening worth doing when the code is touched anyway.
-* **Deferred** — a Phase 6 item, listed for completeness.
+* **Deliberate** — absent on purpose (see above), listed for completeness.
 
 If nothing is found, say so. A clean review of a small, boring surface is the expected outcome.

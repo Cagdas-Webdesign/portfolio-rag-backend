@@ -143,7 +143,9 @@ stays in. Removing a retrieval miss, an answered unknown or a reply that was cut
 suite easier, not smaller. Redundancy was removed instead: questions with the same expected sources,
 the same retrieval path, or no history and no coverage the kept questions lack.
 
-The result covers all 12 knowledge documents, every category with at least two questions, four
+The result covers all 12 knowledge documents the corpus had when the suite was chosen (a 13th,
+`portfolio-capabilities-and-evidence`, came later and is exercised by the diagnostic probes, not by
+the frozen suite), every category with at least two questions, four
 must-refuse questions of four different kinds, and 20 answerable ones — most of them questions a
 visitor would actually ask. A test (`tests/unit/test_release_acceptance_suite.py`) pins the ids, the
 coverage, the historical cases and the unchanged dataset.
@@ -252,6 +254,58 @@ Seven passages of the largest size chunking allows exceed the context budget by 
 skipped and counted, never cut. The seven largest passages of the current corpus fit with room
 (2,986 of 4,183 tokens). A test asserts both.
 
+### Retrieval probes and the name effect (2026-10-11)
+
+`portfolio-questions.retrieval-probes.yaml` — 13 diagnostic visitor questions (project overview,
+AI technologies, services, social media, several wordings of one intent). **Not a release suite**:
+it gates nothing, and the release-acceptance suite and its dataset are unchanged. Measured
+retrieval-only against the production path (`--top-k 30 --min-similarity -1`), scored on the seven
+passages that actually reach the model:
+
+| Probes, 12 answerable | hit@1 / 3 / 5 / 7 | MRR@7 | expected sources in context | `working-style` slots |
+| --- | --- | --- | --- | --- |
+| before (corpus 160 chunks) | 2 / 7 / 7 / 9 | 0.375 | 0.332 | 35 of 91 |
+| after the project overview and the AI subsection (162 chunks) | 5 / 10 / 10 / 11 | 0.623 | 0.399 | 31 of 91 |
+
+The 24 release-acceptance questions were unchanged by that step (hit@1/3/5/7 15/17/18/18 of 20).
+
+**The name effect.** In those runs, when a question names Çağdaş, 99 % of the top-7 and 100 % of the
+top-30 passages name him too, against 70 % of the corpus; when it does not, 53 %. A passage that does
+not name him was never in the top 30 of a question that does, and the two project documents describe
+their subject impersonally ("Das Backend …") in most sections. That, more than genericity, explains
+why person-centred sections such as `working-style` displace concrete project and stack sections. The
+remedy chosen is content, not ranking: the canonical project and stack sections now state whose
+portfolio and backend they describe in their first sentence. Measured on a consistent index
+(`results/variants-2026-10-11/V0-synced.json`, the synchronized corpus in the in-memory store, which
+matches Vectorize to ±3e-5 on every unchanged passage): release acceptance hit@1/3/5/7 15/17/19/19 of
+20, and `broad-ai-technologies` finds the AI section at rank 5 instead of 12.
+
+**Vectorize makes writes queryable with a delay.** The acceptance export taken seconds after that
+synchronization (`retrieval-final-2026-10-11-acceptance.json`) still scored the seven rewritten
+passages with their old vectors; the probes export 21 seconds later did not. After a
+synchronization, wait before measuring, and treat an export taken straight after one as suspect.
+
+**Four further wordings were measured and rejected** (`results/variants-2026-10-11/`): restoring the
+older sentence in `professional-profile › AI and RAG Development` changed nothing measurable; adding
+"künstliche Intelligenz (KI)" cost two questions evidence; removing the overview's closing sentence
+made the overview rank higher on AI questions and pushed the AI section down. Wording groups in
+`portfolio-questions.retrieval-variants.yaml` show the name effect is bounded: specific topics
+(prompt injection, testing, Slack, automation) rank first with or without the name; general ones
+(GitHub, components, responsive design) lose ranks with it, and in each the answering evidence still
+reaches the context through another passage.
+
+**Considered and rejected:** a per-document cap (with or without exempting the top document) — on
+these exports it raised hit@k on one set and took primary evidence out of the context on the other;
+stripping the name from the query — it would empty identity questions ("Wer ist Çağdaş?") and cannot
+be measured offline.
+
+**Two governance notes, deliberately not acted on.** The frozen retrieval verdict counts a source as
+missed beyond hit@5 while production sends seven passages, so `broad-ai-technologies` was reported a
+miss with its source at rank 7 and cited; hit@7 above is a separate diagnostic, and changing the
+frozen criterion is a release decision. And `paraphrased-scroll-animation` is answered word for word
+by `react-portfolio › Visuelle Erklärung komplexer Abläufe` ("GSAP mit ScrollTrigger …"), a section
+added after its ground truth was written; adding it would change the frozen dataset.
+
 ## Read this before quoting a number
 
 **The corpus is fixtures, not the portfolio.** Every number below was measured against `corpus/` —
@@ -338,8 +392,8 @@ provider call when it can, and the citation check is what actually holds when it
 
 ## The real corpus
 
-The dataset in `portfolio-questions.yaml` — 49 questions against the 12 documents in `../knowledge/`
-— has been run against the **production retrieval path**: `mistral-embed` for embeddings and
+The dataset in `portfolio-questions.yaml` — 49 questions written against the 12 documents
+`../knowledge/` then held (13 since 2026-10-09) — has been run against the **production retrieval path**: `mistral-embed` for embeddings and
 Cloudflare Vectorize as the store, which is the combination the deployed service uses. That answers
 the question the fixture numbers above deliberately cannot.
 

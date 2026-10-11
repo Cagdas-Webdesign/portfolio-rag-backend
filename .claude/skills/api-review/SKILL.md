@@ -47,8 +47,8 @@ uv run python -c "import json;from portfolio_rag.main import app;print(json.dump
 This is the check most likely to fail. The document must describe exactly what the code produces.
 
 * No documented response the endpoint cannot return, and none it can return left undocumented.
-  `POST /api/v1/chat` documents `200` with `ChatResponse`, plus `422`, `503` and `500`. It no longer
-  documents `501` — nothing produces it.
+  `POST /api/v1/chat` documents `200` with `ChatResponse`, plus `403` (edge guard), `413` (body
+  limit), `422`, `503` and `500`. It no longer documents `501` — nothing produces it.
 * Every route has a `summary`, a `description` and a tag.
 * Error responses reference `ErrorResponse`.
 * `tests/integration/test_openapi.py` enforces much of this. If a change makes those tests fail,

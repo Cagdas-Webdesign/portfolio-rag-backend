@@ -132,6 +132,7 @@ class WorkersAIChatProvider:
         retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
         client: httpx.AsyncClient | None = None,
         sleeper: Sleeper | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         if not account_id:
             raise ValueError("a Cloudflare account id is required")
@@ -143,6 +144,8 @@ class WorkersAIChatProvider:
             raise ValueError("max_attempts must be positive")
 
         self._model = model
+        #: ``None`` sends no reasoning field at all — see `_payload`.
+        self._reasoning_effort = reasoning_effort
         #: ``None`` means the adapter's own default, so the number lives in
         #: exactly one place and a caller that has no opinion cannot copy it.
         self._max_attempts = DEFAULT_MAX_ATTEMPTS if max_attempts is None else max_attempts
@@ -192,7 +195,9 @@ class WorkersAIChatProvider:
         of it, and never shorter than the configured one.
         """
         timeout = request_timeout_seconds(self._timeout_seconds, request.max_output_tokens)
-        body, attempts = await self._post_with_retries(_payload(request), timeout)
+        body, attempts = await self._post_with_retries(
+            _payload(request, reasoning_effort=self._reasoning_effort), timeout
+        )
         try:
             response = _parse_completion(body, fallback_model=self._model)
         except LLMProviderError as exc:
@@ -267,7 +272,7 @@ class WorkersAIChatProvider:
         )
 
 
-def _payload(request: GenerationRequest) -> dict[str, Any]:
+def _payload(request: GenerationRequest, *, reasoning_effort: str | None = None) -> dict[str, Any]:
     """Map the port's request onto Workers AI's wire format.
 
     The model is in the URL, not the body — which is the one shape difference
@@ -284,6 +289,8 @@ def _payload(request: GenerationRequest) -> dict[str, Any]:
         payload["temperature"] = request.temperature
     if request.response_format is ResponseFormat.JSON_OBJECT:
         payload["response_format"] = {"type": "json_object"}
+    if reasoning_effort is not None:
+        payload["reasoning"] = {"effort": reasoning_effort}
     return payload
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated, Final, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -54,6 +54,20 @@ class LLMProviderName(StrEnum):
     DETERMINISTIC = "deterministic"
     MISTRAL = "mistral"
     CLOUDFLARE_WORKERS_AI = "cloudflare_workers_ai"
+
+
+class GroundingProviderName(StrEnum):
+    """Which adapter answers the grounding check, when it is not the generator.
+
+    Unset (``None`` on :attr:`Settings.grounding_provider`) means the generation
+    adapter checks its own answers — the behaviour before this setting existed.
+    ``CLOUDFLARE_WORKERS_AI`` names that explicitly, which is the rollback;
+    ``GROQ`` moves only the check to Groq. There is no fallback between them: a
+    provider that is selected and cannot be built refuses to start.
+    """
+
+    CLOUDFLARE_WORKERS_AI = "cloudflare_workers_ai"
+    GROQ = "groq"
 
 
 class VectorStoreName(StrEnum):
@@ -160,6 +174,20 @@ class Settings(BaseSettings):
 
     cloudflare_workers_ai_token: SecretStr | None = None
     cloudflare_workers_ai_chat_model: str = Field(default="@cf/openai/gpt-oss-120b", min_length=1)
+    #: Reasoning effort sent to a Workers AI reasoning model as
+    #: ``"reasoning": {"effort": …}``. ``None`` — the default — sends nothing,
+    #: so the request is exactly what it was and the provider's own default
+    #: (``medium`` for ``gpt-oss-120b``) applies. Applies to every call of the
+    #: adapter: the generation and the grounding check alike. Experimental:
+    #: Cloudflare documents the field for the Responses format; whether the
+    #: ``messages`` format this adapter sends honours it is what a run measures.
+    cloudflare_workers_ai_reasoning_effort: Literal["low", "medium", "high"] | None = None
+
+    # --- grounding check ------------------------------------------------------
+    #: ``None``: the generation adapter also answers the grounding check.
+    grounding_provider: GroundingProviderName | None = None
+    groq_api_key: SecretStr | None = None
+    groq_grounding_model: str = Field(default="openai/gpt-oss-20b", min_length=1)
 
     # --- retrieval tuning ----------------------------------------------------
     # Overrides, not defaults: ``None`` means "whatever `rag.policy` says".
@@ -212,6 +240,7 @@ class Settings(BaseSettings):
         "cloudflare_vectorize_index",
         "edge_shared_secret",
         "cloudflare_workers_ai_token",
+        "groq_api_key",
         mode="before",
     )
     @classmethod

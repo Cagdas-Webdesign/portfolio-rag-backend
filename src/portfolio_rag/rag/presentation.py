@@ -85,6 +85,29 @@ _PARENTHESISED_LABELS: Final = re.compile(r"[ \t]*(?<!/)\(S\d+(?:[ \t]*,[ \t]*S\
 _MARK_GROUP: Final = re.compile(r"\[(S\d+(?:[ \t]*[,;][ \t]*S\d+)+)\]")
 _GROUP_SEPARATOR: Final = re.compile(r"[ \t]*[,;][ \t]*")
 
+#: A mark the model wrote in a shape other than ``[S1]`` (v1.2.1). The source
+#: list is parsed forgivingly — case, brackets and blanks do not matter there
+#: (`rag.generation._parse_labels`) — so ``[s1]`` or ``[ S1 ]`` is a verified
+#: citation with its button below the answer, while an exact-syntax match left
+#: the mark itself in the text. Recognised here with the same tolerance, and
+#: more: full-width and lenticular brackets, escaped brackets, non-breaking and
+#: zero-width blanks, a ``†…`` locator after the label, and lists or ranges of
+#: labels. Each is rewritten to the canonical ``[S1]`` before renumbering, so a
+#: verified one becomes its number and an unverified one is removed — exactly
+#: as the canonical form always was. Only label-shaped content inside brackets
+#: matches: ``[Seite 1]``, ``【Hinweis】`` and ``[S3-Bucket]`` do not.
+_MARK_BLANK: Final = r"[ \t\u00a0\u2000-\u200d\u2060\ufeff]*"
+_MARK_LABEL: Final = r"[Ss][ \u00a0]?\d+(?:†[^\]\uff3d\u3011\u3015\n,;]*)?"
+#: Public so the leak gate (`evaluation.e2e.INTERNAL_LABEL`) recognises exactly
+#: the shapes removed here, and the two cannot drift apart again.
+MARK_VARIANT_PATTERN: Final = (
+    r"\\?[\[\uff3b\u3010\u3014]"
+    rf"{_MARK_BLANK}(?P<labels>{_MARK_LABEL}(?:{_MARK_BLANK}[,;\u2013\u2014-]{_MARK_BLANK}{_MARK_LABEL})*)"
+    rf"{_MARK_BLANK}\\?[\]\uff3d\u3011\u3015]"
+)
+_MARK_VARIANT: Final = re.compile(MARK_VARIANT_PATTERN)
+_MARK_VARIANT_LABEL: Final = re.compile(r"[Ss][ \u00a0]?(\d+)")
+
 #: A bare label as a word: not inside another word, a path or a version number,
 #: so ``SS1``, ``S1x``, ``S3-Bucket``, ``/S1`` and ``S1.2`` are not labels. Not
 #: inside brackets or parentheses either — those are marks, handled elsewhere.
@@ -251,9 +274,10 @@ def present_answer(
             order.append(citation)
         return f"{blanks}[{order.index(citation) + 1}]"
 
+    presented = _MARK_VARIANT.sub(_canonical_marks, answer)
     presented = _MARK_GROUP.sub(
         lambda match: " ".join(f"[{label}]" for label in _GROUP_SEPARATOR.split(match.group(1))),
-        answer,
+        presented,
     )
     presented = _drop_label_references(presented)
     presented = _MARK.sub(renumber, presented)
@@ -267,6 +291,13 @@ def present_answer(
     order.extend(citation for citation in citations if citation not in order)
 
     return PresentedAnswer(answer=presented, citations=tuple(order), removed_marks=removed)
+
+
+def _canonical_marks(match: re.Match[str]) -> str:
+    """``【s1†L3】`` → ``[S1]``; ``[ S1, S2 ]`` → ``[S1] [S2]``. A ``†`` locator
+    is dropped before the labels are read, so its digits are never a label."""
+    labels = re.sub(r"†[^,;\u2013\u2014-]*", "", match.group("labels"))
+    return " ".join(f"[S{number}]" for number in _MARK_VARIANT_LABEL.findall(labels))
 
 
 def _labels_to_citations(

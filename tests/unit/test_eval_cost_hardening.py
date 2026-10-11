@@ -443,3 +443,40 @@ def test_the_report_carries_band_share_history_and_projection():
     assert "| History | 1 run(s), age 0 days, 0 compatibility note(s) |" in summary
     assert "| Budget guard |" in summary
     assert fields["actual_remaining"] is None
+
+
+# --- a grounding check on another provider is not priced in neurons -------------------
+
+
+def test_a_call_made_with_another_model_costs_no_neurons():
+    """Groq checks are not billed in Cloudflare neurons — neither priced at the
+    rates nor counted at the structural bound as if their usage were missing."""
+    from portfolio_rag.evaluation.budget import spent
+    from portfolio_rag.rag.policy import DEFAULT_CONTEXT_POLICY
+
+    generation = call()
+    groq_check = replace(
+        call(ProviderCallType.GROUNDING_CHECK, tokens=(600, 150)), model="openai/gpt-oss-20b"
+    )
+    groq_check_without_usage = replace(groq_check, input_tokens=None, output_tokens=None)
+
+    alone, _ = spent([generation], PROFILE, DEFAULT_CONTEXT_POLICY)
+    total, unreported = spent(
+        [generation, groq_check, groq_check_without_usage], PROFILE, DEFAULT_CONTEXT_POLICY
+    )
+
+    assert total == alone
+    assert unreported == 0
+
+
+def test_calls_of_the_profiled_model_are_still_priced_for_both_steps():
+    from portfolio_rag.evaluation.budget import spent
+    from portfolio_rag.rag.policy import DEFAULT_CONTEXT_POLICY
+
+    total, _ = spent(
+        [call(), call(ProviderCallType.GROUNDING_CHECK, tokens=(600, 150))],
+        PROFILE,
+        DEFAULT_CONTEXT_POLICY,
+    )
+
+    assert total == PROFILE.estimate(1200, 150) + PROFILE.estimate(600, 150)

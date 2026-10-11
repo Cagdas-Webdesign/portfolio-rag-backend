@@ -2,26 +2,28 @@
 
 This document does two jobs, and they are kept apart on purpose:
 
-* **Current state** — what is deployed and running today, at v1.0.0.
+* **Current state** — the production setup as last verified here (v1.0.0), and what this tree,
+  **1.3.0**, adds as configuration.
 * **The procedure** — steps 0–8, reproducible for the next release or for rebuilding the deployment
   from scratch.
 
 Every environment variable named below is real — copied from `portfolio_rag.core.config.Settings`,
 not invented for the document. No value shown is a credential.
 
-## Current state — v1.0.0
+## Current state
 
 | | |
 | --- | --- |
-| Release | v1.0.0, the frozen production baseline |
+| Release | this tree is **1.3.0**; v1.0.0 was the frozen production baseline and the last deployment verified in this document. Which revision serves traffic is Cloud Run state, not recorded here |
 | Origin | Docker container on Google Cloud Run |
 | Front door | Cloudflare Worker edge gateway ([`../edge/`](../edge/README.md)) |
-| Generation | Cloudflare Workers AI — `@cf/openai/gpt-oss-120b` |
+| Generation | Cloudflare Workers AI — `@cf/openai/gpt-oss-120b`; reasoning effort `low` is the value planned for production with 1.3.0 (`PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT`, step 6) |
+| Grounding check | by default the generation provider checks its own answers; 1.3.0 can move only the check to **Groq** — `openai/gpt-oss-20b` (`PORTFOLIO_RAG_GROUNDING_PROVIDER=groq`, step 6) |
 | Embeddings | Mistral — `mistral-embed` |
 | Vector store | Cloudflare Vectorize |
-| Corpus | `knowledge/`, indexed into the production index |
+| Corpus | `knowledge/` — 13 documents, 162 chunks in 1.3.0 — indexed into the production index |
 | Retrieval | evaluated against the real corpus on the production path; `top_k` 7 (from 5, measured 2026-10-04 — see `evaluation/README.md`), `min_similarity` 0.250 |
-| Verification | the [step 7](#7-verify) smoke test completed successfully — `/health`, a grounded answer with citations, and the controlled refusal path |
+| Verification | the [step 7](#7-verify) smoke test completed successfully against v1.0.0 — `/health`, a grounded answer with citations, and the controlled refusal path; it is re-run after every deployment |
 
 Account ids, index names, tokens, secrets and service URLs are deployment configuration and are
 deliberately absent from this repository. They live in the provider dashboards, in Worker secrets and
@@ -183,9 +185,13 @@ the process does not start. A production deployment cannot silently serve placeh
 | `PORTFOLIO_RAG_CLOUDFLARE_VECTORIZE_INDEX` | required | must already exist |
 | `PORTFOLIO_RAG_MISTRAL_EMBEDDING_MODEL` | optional | default `mistral-embed` |
 | `PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_CHAT_MODEL` | optional | default `@cf/openai/gpt-oss-120b` |
+| `PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT` | optional; `low` planned | `low`, `medium` or `high`, sent as `reasoning: {effort}` with every Workers AI call — the generation, and the grounding check when Workers AI answers it. Unset sends nothing and the model's own default applies. Experimental: Cloudflare documents the field for the Responses format; whether the `messages` format this adapter sends honours it is not established by any measurement in this repository |
+| `PORTFOLIO_RAG_GROUNDING_PROVIDER` | optional | unset: the generation provider checks its own answers. `groq`: only the grounding check runs on Groq. `cloudflare_workers_ai`: the check on Workers AI, explicitly — the rollback |
+| `PORTFOLIO_RAG_GROQ_API_KEY` | **secret** | required with `PORTFOLIO_RAG_GROUNDING_PROVIDER=groq`; missing, the service refuses to start — it never falls back |
+| `PORTFOLIO_RAG_GROQ_GROUNDING_MODEL` | optional | default `openai/gpt-oss-20b` |
 | `PORTFOLIO_RAG_MISTRAL_CHAT_MODEL` | optional | default `mistral-small-latest`; only read when the Mistral chat adapter is selected |
 | `PORTFOLIO_RAG_RETRIEVAL_MIN_SIMILARITY` | optional | default 0.25; production runs at that value, evaluated in step 4 |
-| `PORTFOLIO_RAG_RETRIEVAL_TOP_K` | optional | default 5 |
+| `PORTFOLIO_RAG_RETRIEVAL_TOP_K` | optional | default 7 (5 until 2026-10-04, measured — see `evaluation/README.md`) |
 | `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` | optional | default 30 |
 | `PORTFOLIO_RAG_REQUEST_DEADLINE_SECONDS` | optional | default 60, provisional; keep below the Cloud Run timeout |
 | `PORTFOLIO_RAG_KNOWLEDGE_ROOT` | optional | default `knowledge` |
@@ -267,6 +273,39 @@ the repository.
    gcloud run services update portfolio-rag --max-instances=3 --concurrency=8
    ```
 3. **Confirm the request timeout** (see below).
+4. **Optional — the grounding check on Groq.** Only the check moves; generation, embeddings and
+   Vectorize stay as they are. The key lives in Secret Manager and nowhere else:
+   ```bash
+   printf '%s' "$GROQ_API_KEY" | gcloud secrets create portfolio-rag-groq-api-key --data-file=- --project=portfolio-rag-prod
+   gcloud secrets add-iam-policy-binding portfolio-rag-groq-api-key --project=portfolio-rag-prod \
+     --member="serviceAccount:<the service's runtime service account>" --role=roles/secretmanager.secretAccessor
+   gcloud run services update portfolio-rag --project=portfolio-rag-prod --region=europe-west3 \
+     --update-secrets=PORTFOLIO_RAG_GROQ_API_KEY=portfolio-rag-groq-api-key:latest \
+     --update-env-vars=PORTFOLIO_RAG_GROUNDING_PROVIDER=groq,PORTFOLIO_RAG_GROQ_GROUNDING_MODEL=openai/gpt-oss-20b
+   ```
+   This needs an image that contains the Groq adapter (1.3.0 or later); the update itself is
+   configuration and makes a new revision. If the secret already exists, add a version
+   (`gcloud secrets versions add`) instead of creating it. Verify: the `application started` log
+   names `grounding_check_model: openai/gpt-oss-20b`, and the `provider call` lines with
+   `call_type: grounding_check` carry that model.
+
+   **What Groq receives**, for each answer that passed every earlier check: the grounding-check
+   instructions, the passages the answer cited (labels included), the visitor's question and the
+   answer draft — nothing else: no other passage, no corpus, no ids, paths, fingerprints, vectors or
+   other credentials ([SECURITY.md](SECURITY.md), section 3). The request asks for the verdict only
+   (`include_reasoning: false`). A Groq failure ends the request as a `503` — after one transport
+   retry for a timeout, a connection failure or a 5xx, after none for a 429 or any other 4xx, and
+   after one repeated check for an empty or cut-off reply. The answer is not published and there is
+   no fallback to another checker. Groq is an additional processor of visitor questions: a privacy
+   notice that names the providers should name it too.
+5. **Reasoning effort — planned value `low`.** Applies to every Workers AI call; with the check on
+   Groq that is the generation only:
+   ```bash
+   gcloud run services update portfolio-rag --project=portfolio-rag-prod --region=europe-west3 \
+     --update-env-vars=PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT=low
+   ```
+   Removing the variable (`--remove-env-vars=PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT`)
+   restores the request exactly as it was before 1.3.0.
 
 ### The request timeout
 
@@ -331,6 +370,12 @@ Check, in order:
 4. A question aimed at an `internal` document returns nothing from it.
 5. The response carries an `X-Request-ID` header.
 6. Logs contain counts and durations — and no questions, contexts, prompts or answers.
+7. `/health` reports the version of the image just deployed (`1.3.0` for this tree). It reads
+   `PORTFOLIO_RAG_VERSION` when that is set, so a stale override shows here.
+8. The `application started` log line names the generation model, the grounding-check model and
+   `corpus_chunks: 162`; after an answered question, the `provider call` line with
+   `call_type: grounding_check` names the model that checked it. This is the only evidence of which
+   provider answered the check — the developer CLI does not print it.
 
 ## 8. Connect the front end
 
@@ -353,3 +398,15 @@ calling providers directly.
 The image is stateless and the index is derived data. Rolling back is redeploying the previous
 image; if the corpus changed, re-run `knowledge index` from the previous revision. Nothing has to be
 migrated, because nothing is stored.
+
+**Grounding back on Workers AI**, without a new image — either route the traffic to the previous
+revision, or set the check back explicitly (a new revision; the Groq secret can stay mounted, it is
+no longer read):
+
+```bash
+gcloud run services update portfolio-rag --project=portfolio-rag-prod --region=europe-west3 \
+  --update-env-vars=PORTFOLIO_RAG_GROUNDING_PROVIDER=cloudflare_workers_ai
+```
+
+Removing the variable (`--remove-env-vars=PORTFOLIO_RAG_GROUNDING_PROVIDER`) has the same effect: the
+generator checks its own answers again.

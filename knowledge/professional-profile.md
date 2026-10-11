@@ -24,8 +24,8 @@ technologies:
   - Figma
 source: "Çağdaş Uçar"
 source_type: authored
-version: 2
-updated_at: 2026-10-01
+version: 4
+updated_at: 2026-10-11
 visibility: public
 trust_level: authoritative
 ---
@@ -72,9 +72,11 @@ Ein aktueller technischer Schwerpunkt liegt auf KI-gestützten Webanwendungen un
 
 Für seinen Portfolio-Assistenten entwickelt Çağdaş ein eigenes RAG-Backend mit Python und FastAPI. Das System trennt unter anderem Wissensverarbeitung, Chunking, Embeddings, Vector Retrieval, Kontextbildung, Antwortgenerierung und Quellenvalidierung.
 
-Als KI-Technologien setzt er in diesem Backend konkret Mistral mit dem Modell `mistral-embed` für die Embeddings, Cloudflare Vectorize als Vector Store für das semantische Retrieval und Cloudflare Workers AI für die Textgenerierung ein. Im Content-Bereich arbeitet beziehungsweise beschäftigt er sich außerdem mit ElevenLabs für KI-gestützte Audio-Produktion.
+In diesem Backend greifen mehrere Dienste ineinander: Mistral mit dem Modell `mistral-embed` erzeugt die Embeddings für Knowledge Chunks und Nutzerfragen, Cloudflare Vectorize speichert diese Vektoren als Vector Store für das semantische Retrieval, und Cloudflare Workers AI mit dem Modell `@cf/openai/gpt-oss-120b` generiert aus dem gefundenen Kontext die Antwort. Für die anschließende Grounding-Prüfung ist zusätzlich eine Anbindung an Groq mit dem Modell `openai/gpt-oss-20b` implementiert. Ausgeliefert wird das Backend als Docker-Image; produktiv läuft es als Container auf Google Cloud Run.
 
 Die detaillierte Architektur dieses Systems ist als eigenes Portfolio-Projekt dokumentiert.
+
+Unabhängig von diesem RAG-Backend arbeitet beziehungsweise beschäftigt sich Çağdaş im Content-Bereich mit ElevenLabs für KI-gestützte Audio-Produktion. ElevenLabs ist kein Bestandteil des RAG-Backends.
 
 ## Marketing and Digital Communication
 
@@ -91,3 +93,15 @@ Dadurch betrachtet er Webprojekte nicht ausschließlich aus Entwicklungsperspekt
 Sein Profil liegt an der Schnittstelle zwischen Full-Stack Web Development, modernen Frontends, WordPress, Backend- und API-Integration, Automation und KI-gestützten Websystemen.
 
 Dabei geht es nicht darum, möglichst viele Technologien isoliert aufzuzählen. Sein Schwerpunkt liegt darauf, zu verstehen, wie unterschiedliche Komponenten eines Websystems miteinander kommunizieren und zu einer funktionierenden Anwendung zusammengesetzt werden.
+
+## Projekte im Überblick
+
+Çağdaş hat zwei technisch getrennte, aber miteinander verbundene Portfolio-Projekte umgesetzt.
+
+Das React-Portfolio ist seine Portfolio-Website selbst: eine React-Anwendung mit JavaScript, Framer Motion und GSAP, entwickelt mit Node.js und Vite. Sie zeigt Frontend-Entwicklung, UI-Design, Animation und API-Integration.
+
+Das Custom RAG Backend ist das eigene Backend des AI Portfolio Assistant, entwickelt mit Python und FastAPI. Es umfasst unter anderem Wissensverarbeitung, Retrieval, Antwortgenerierung, Grounding und Quellenvalidierung und läuft produktiv auf Google Cloud Run.
+
+Zusätzlich enthält das Portfolio interaktive Demonstrationen zu Automation, API-Kommunikation sowie SEO und Performance. Sie visualisieren Abläufe innerhalb des Portfolios und sind keine produktiv betriebenen Kundenprozesse. Die Social-Media-Case-Study „VERDE“ ist ein fiktiver Portfolio-Case.
+
+Weitere Bereiche wie WordPress und WooCommerce, Plugin-Entwicklung, Automation und Social Media sind als Kompetenzen beschrieben; einzelne Kundenprojekte werden dabei nicht namentlich aufgeführt.

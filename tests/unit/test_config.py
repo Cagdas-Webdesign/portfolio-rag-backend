@@ -207,3 +207,58 @@ def test_whitespace_around_an_identifier_is_dropped(field: str):
 def test_a_whitespace_only_credential_is_absent_not_blank():
     blank = " \n"
     assert Settings(cloudflare_workers_ai_token=blank).cloudflare_workers_ai_token is None
+
+
+def test_the_workers_ai_reasoning_effort_is_unset_by_default():
+    assert Settings().cloudflare_workers_ai_reasoning_effort is None
+
+
+def test_the_workers_ai_reasoning_effort_reads_the_environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT", "low")
+
+    assert Settings().cloudflare_workers_ai_reasoning_effort == "low"
+
+
+def test_an_unknown_workers_ai_reasoning_effort_is_rejected(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT", "minimal")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_no_separate_grounding_provider_is_the_default():
+    settings = Settings()
+
+    assert settings.grounding_provider is None
+    assert settings.groq_api_key is None
+    assert settings.groq_grounding_model == "openai/gpt-oss-20b"
+
+
+def test_the_grounding_provider_and_groq_settings_read_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("PORTFOLIO_RAG_GROUNDING_PROVIDER", "groq")
+    monkeypatch.setenv("PORTFOLIO_RAG_GROQ_API_KEY", "  gsk_from_a_secret_manager\n")
+    monkeypatch.setenv("PORTFOLIO_RAG_GROQ_GROUNDING_MODEL", "openai/gpt-oss-120b")
+
+    settings = Settings()
+
+    assert settings.grounding_provider is not None
+    assert settings.grounding_provider.value == "groq"
+    assert settings.groq_api_key is not None
+    assert settings.groq_api_key.get_secret_value() == "gsk_from_a_secret_manager"
+    assert settings.groq_grounding_model == "openai/gpt-oss-120b"
+
+
+def test_an_unknown_grounding_provider_is_rejected(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PORTFOLIO_RAG_GROUNDING_PROVIDER", "openai")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_the_groq_key_never_appears_in_the_settings_repr(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PORTFOLIO_RAG_GROQ_API_KEY", "gsk_secret_value_123")
+
+    assert "gsk_secret_value_123" not in repr(Settings())
+    assert "gsk_secret_value_123" not in str(Settings().model_dump())

@@ -38,6 +38,10 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing structure, and
 * **A generation provider receives the grounding instructions, the selected public passages and the
   question.** Nothing else leaves this process: not the corpus, not internal documents, not
   fingerprints, source paths, chunk ids or vectors.
+* **A grounding-check provider receives the check instructions, the question, the answer draft and
+  only the passages that answer cited** — the generator by default, Groq when configured. The same
+  exclusions apply, and a check that cannot be completed fails closed: no fallback checker, no
+  unchecked answer.
 * **Embedding spaces are compared by identity, never by dimensionality.** Two models with the same
   output length produce vectors that are not comparable.
 * **Keep the RAG core free of Cloudflare.** Cloudflare is a deployment target reached through

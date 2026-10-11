@@ -10,7 +10,7 @@ advisory. Check your documents at any time:
 uv run portfolio-rag knowledge validate
 ```
 
-**This directory holds the 12 authorized documents of the portfolio corpus**, alongside the format
+**This directory holds the 13 authorized documents of the portfolio corpus**, alongside the format
 and a blank template. They are the first real knowledge base of this system and state facts about
 Çağdaş Uçar and his work. Knowledge documents state facts about a real person and their work; they
 are written by that person, never generated.

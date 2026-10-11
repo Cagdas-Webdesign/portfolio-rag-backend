@@ -9,16 +9,42 @@ through a port. FastAPI is the transport boundary; the providers behind it are c
 This repository is the backend only. Its production client is an existing React/Vite portfolio,
 which lives in a separate repository and is developed independently of this one.
 
-## Production status
+**Contents:** [Why](#why-a-custom-rag-backend) · [Status](#status) · [Architecture](#architecture-at-a-glance) ·
+[Request flow](#request-flow) · [Properties](#key-engineering-properties) · [Tech stack](#tech-stack) ·
+[HTTP API](#http-api) · [Security](#reliability-and-security) · [Quality evidence](#evaluation-and-testing) ·
+[Local development](#local-development) · [Deployment](#container) · [Non-goals](#deliberate-non-goals)
+
+## Why a custom RAG backend
+
+A portfolio assistant that answers questions about one person has an unusual failure mode: an
+invented skill, project or employer is not a minor error, it is a false statement about a real
+person. A hosted chatbot or a prompt over a model's general knowledge cannot rule that out. This
+backend is built so that it can be checked: every answer comes from passages retrieved from a
+reviewed corpus, a second call verifies that the cited passages carry the answer, and only citations
+the backend itself resolved are published. When the corpus does not support an answer, the system
+says so.
+
+The pipeline is written here rather than assembled from an orchestration framework because the
+parts that decide answer quality — chunking, retrieval, context, grounding, citations and their
+evaluation — are exactly the parts that need to be measured and changed deliberately.
+
+## Status
 
 | | |
 | --- | --- |
-| Release | **v1.0.0** |
-| Runtime | Docker image on **Google Cloud Run**, behind a Cloudflare Worker gateway |
-| Generation | **Cloudflare Workers AI** — `@cf/openai/gpt-oss-120b` |
+| This tree | **1.3.0**, a release candidate (`portfolio_rag.__version__`) — Ruff, mypy `strict` and 2855 tests pass offline |
+| Accepted baseline | `v1.2.0-accepted`: the last live release acceptance, 24/24 questions, 0 pipeline errors, 38/38 citations verified, 4/4 unknown questions refused. No release acceptance has been run for 1.3.0 ([docs/RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md)) |
+| Production | a Docker image on **Google Cloud Run**, behind a Cloudflare Worker gateway. v1.0.0 was deployed and smoke-tested against the checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); which image a revision runs is Cloud Run state and is not recorded in this repository |
+| Planned | deploy the 1.3.0 image, with the grounding check on Groq and reasoning effort `low`, and re-run the [step 7 smoke test](docs/DEPLOYMENT.md#7-verify) |
+| History | phases and every release since: [docs/ROADMAP.md](docs/ROADMAP.md) |
+
+| Concern | Implementation |
+| --- | --- |
+| Generation | **Cloudflare Workers AI** — `@cf/openai/gpt-oss-120b`; optional reasoning effort (`low` planned for production) |
+| Grounding check | the generation provider by default; configurable on its own provider — **Groq** `openai/gpt-oss-20b` (`PORTFOLIO_RAG_GROUNDING_PROVIDER=groq`) |
 | Embeddings | **Mistral** — `mistral-embed` (1024 dimensions, cosine) |
-| Vector store | **Cloudflare Vectorize** |
-| Verification | deployed and smoke-tested against the checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Vector store | **Cloudflare Vectorize**, `top_k` 7, public-only by construction |
+| Corpus | `knowledge/` — 13 documents, 162 chunks |
 
 Three behaviours define the product surface:
 
@@ -63,6 +89,7 @@ React portfolio / future clients        developer / CI
 │ infrastructure/  embeddings:  deterministic · Mistral          │
 │                  generation:  deterministic · Mistral ·        │
 │                               Cloudflare Workers AI            │
+│                  grounding:   the generator, or Groq           │
 │                  stores:      in-memory · Cloudflare Vectorize │
 └────────────────────────────────────────────────────────────────┘
        core/  config · errors · logging · request context
@@ -102,8 +129,8 @@ bounded context                       ranked, deduplicated, token-budgeted, labe
    ▼                                  never truncated mid-passage
 LLM generation                        Workers AI, grounding instructions as a system message
    ▼
-grounding check                       an answer with no verifiable source is not published
-   ▼
+grounding check                       a second call (the generator, or Groq) reads the answer
+   ▼                                  against its cited passages; unverified is not published
 citation validation                   labels resolved against chunks retrieved for this request;
    ▼                                  unknown labels are dropped and counted
 JSON response                         answer + citations + X-Request-ID
@@ -129,7 +156,8 @@ are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Phases 1–5 built the product. **Phase 6 added no features**: it measured the pipeline, attacked it,
 audited it and made it deployable — the work that closed out v1.0.0. There is no Phase 7; further
-behavioural change is a new, explicit version rather than an open-ended phase.
+behavioural change is a new, explicit version rather than an open-ended phase — 1.0.1 to 1.3.0 so
+far, each listed with what it changed in [docs/ROADMAP.md](docs/ROADMAP.md#releases-since-the-plan-closed).
 
 ## Key engineering properties
 
@@ -162,7 +190,15 @@ behavioural change is a new, explicit version rather than an open-ended phase.
   of transport attempts (3 by default) on retryable statuses, honour a capped `Retry-After`, and
   fail closed to `503` otherwise. A malformed provider reply produces no answer, and its raw text
   never reaches the client. Every outbound call is bounded by
-  `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` (default 30s).
+  `PORTFOLIO_RAG_PROVIDER_TIMEOUT_SECONDS` (default 30s). The Groq adapter, used only for the
+  grounding check, retries once on a timeout, a connection failure or a 5xx and never on a 429 or
+  another 4xx; a check that cannot be completed fails the request closed — there is no fallback to
+  another checker, and a selected Groq provider without its key refuses to start.
+* **What each provider receives.** The embedding provider: the normalized question. The
+  generation provider: the grounding instructions, the selected public passages and the question.
+  The grounding check — on the generator or on Groq: the question, the answer draft and only the
+  passages it cited. None receives the corpus, internal documents, ids, paths or credentials of
+  another provider ([docs/SECURITY.md](docs/SECURITY.md), section 3).
 * **Fail-closed production configuration.** With `PORTFOLIO_RAG_ENVIRONMENT=production`, the
   composition root refuses to build either development stand-in and the process does not start; a
   production app that requires the edge guard without a secret refuses to start too. CORS wildcards
@@ -178,6 +214,7 @@ behavioural change is a new, explicit version rather than an open-ended phase.
 | Embeddings | Mistral `mistral-embed` — 1024 dimensions, cosine |
 | Vector store | Cloudflare Vectorize |
 | Generation | Cloudflare Workers AI `@cf/openai/gpt-oss-120b` |
+| Grounding check | the generation provider, or Groq `openai/gpt-oss-20b` when `PORTFOLIO_RAG_GROUNDING_PROVIDER=groq` |
 | HTTP client | `httpx2` — one async HTTP library for every adapter and for the test client |
 | Frontmatter | PyYAML, through a `SafeLoader` subclass only |
 | Markdown structure | markdown-it-py (parsing only, never rendering) |
@@ -253,7 +290,7 @@ that exists — in the CLI, in the logs, in tests — and none of it is a public
 | `413` | `PAYLOAD_TOO_LARGE` | the body exceeds 16 KiB; it is never parsed |
 | `422` | `VALIDATION_ERROR` | the payload or the question is unusable |
 | `503` | `RETRIEVAL_UNAVAILABLE` | the embedding provider or vector store could not be reached |
-| `503` | `GENERATION_UNAVAILABLE` | the generation provider failed or answered unusably |
+| `503` | `GENERATION_UNAVAILABLE` | the generation provider or the grounding check failed or answered unusably |
 | `500` | `INTERNAL_ERROR` | anything else; nothing about it is disclosed |
 
 `code` is stable and machine-readable — branch on it, not on `message`. Messages never carry
@@ -307,15 +344,24 @@ uv run portfolio-rag eval run --generation-delay-seconds 8   # pace a run inside
 ```
 
 The runner reports hit@1/@3/@5, MRR, a similarity-threshold sweep and **every failing question by
-name** — there is no single score that could hide one. `evaluation/` holds two datasets: 24 questions
-in 8 categories against a neutral fixture corpus, and a larger set against the real corpus. Ground
-truth is a document id plus a section heading, never a chunk id, so the dataset survives a
-re-chunking.
+name** — there is no single score that could hide one. Ground truth is a document id plus a section
+heading, never a chunk id, so a dataset survives a re-chunking. `evaluation/` holds:
 
-Read [evaluation/README.md](evaluation/README.md) before quoting any number from it: the recorded
-measurements were taken against the fixture corpus, and retrieval parameters are provider-specific.
-`min_similarity` measured under one embedding model says nothing under another, which is why the
-threshold is changed only from a measurement and never to make a benchmark look better.
+| Dataset | Questions | Purpose |
+| --- | --- | --- |
+| `questions.yaml` | 24, 8 categories | a neutral fixture corpus — proves the pipeline offline, in CI |
+| `portfolio-questions.yaml` | 49 | the real corpus; its 24-question `release-acceptance` suite is what a live release acceptance asks |
+| `portfolio-questions.retrieval-probes.yaml`, `…-variants.yaml` | 13, 24 | diagnostic visitor questions and wordings of one intent; gate nothing |
+
+End-to-end runs against the real providers (`--e2e --tier smoke|acceptance`) are budget-gated,
+resumable and judged by `eval validate-acceptance`; what makes one a release acceptance is in
+[docs/RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md).
+
+Read [evaluation/README.md](evaluation/README.md) before quoting any number: it says which corpus,
+model and path each measurement was taken on — the fixture corpus offline, the real corpus on the
+production path (`mistral-embed` into Vectorize). Retrieval parameters are provider-specific:
+`min_similarity` measured under one embedding model says nothing under another, which is why it and
+`top_k` are changed only from a measurement and never to make a benchmark look better.
 
 The automated gate is what CI runs on every push and pull request:
 
@@ -333,8 +379,8 @@ chunking, retrieval, adapters), `tests/integration/` (HTTP behaviour, indexing, 
 adversarial and hostile input, the provider failure matrix, composition, the CLI),
 `tests/evaluation/` (the dataset as a regression guard, with real metrics), `tests/contracts/`
 (behavioural contracts every adapter must satisfy) and `tests/live/` (opt-in, against real
-providers, skipped without credentials). At v1.0.0 the suite collects 1659 tests; a standard run
-passes 1654 and skips the 5 live ones. Nothing in CI needs a credential, a network or a cent.
+providers, skipped without credentials). At 1.3.0 the suite collects 2863 tests; a standard run
+passes 2855 and skips the 8 live ones. Nothing in CI needs a credential, a network or a cent.
 
 ## Local development
 
@@ -435,9 +481,12 @@ src/portfolio_rag/
     embedding.py        the embedding representation and its fingerprint
   application/indexing/ desired state, index plan, convergent synchronization
   rag/                  query · policy · retrieval · context · prompt · generation ·
-                        citations · language · service · tokens
-  evaluation/           dataset model, retrieval metrics, evaluation runners, pacing
-  infrastructure/       embedding/ · llm/ · vector_store/ · knowledge/ adapters
+                        verification · citations · presentation · conversation ·
+                        failure_policy · telemetry · language · service · tokens
+  evaluation/           datasets, metrics, retrieval and end-to-end runners, pacing,
+                        budget, checkpoints, release acceptance
+  infrastructure/       embedding/ · llm/ (incl. Groq, grounding only) · vector_store/ ·
+                        knowledge/ adapters
   core/                 config, error taxonomy, logging, request context
   domain/               KnowledgeDocument, KnowledgeChunk, RetrievedChunk, SourceCitation
   ports/                LLMProvider, EmbeddingProvider, VectorStore, ChunkResolver
@@ -445,7 +494,8 @@ knowledge/              the corpus, its format standard and a template
 evaluation/             the question sets, the fixture corpus, and what was measured
 edge/                   the Cloudflare Worker gateway and its tests
 tests/                  unit · integration · evaluation · contracts · live · fixtures
-docs/                   ARCHITECTURE.md, ROADMAP.md, SECURITY.md, DEPLOYMENT.md, adr/
+docs/                   ARCHITECTURE.md, ROADMAP.md, SECURITY.md, DEPLOYMENT.md,
+                        RELEASE_ACCEPTANCE.md, adr/
 ```
 
 The knowledge format — required frontmatter fields, id rules, discovery rules — is specified in
@@ -486,7 +536,8 @@ declined, with the reasoning in [docs/ROADMAP.md](docs/ROADMAP.md):
 * **No agents or tool use.** There is one job: answer from the corpus, or say it cannot.
 * **No re-ranking, hybrid/BM25 search or query rewriting.** Real techniques, but evaluation found
   the limiting factor to be threshold calibration under a specific embedding model rather than
-  ranking, so none of them is justified yet.
+  ranking, and the 2026-10-11 audit measured per-document caps and rejected them; its findings were
+  fixed in the corpus. None of them is justified yet.
 * **No abstraction without a caller** — no package, interface or configuration field exists for a
   future that has not arrived.
 * **No world-knowledge fallback, and no audit trail.** If the corpus does not support an answer, the
@@ -497,7 +548,7 @@ declined, with the reasoning in [docs/ROADMAP.md](docs/ROADMAP.md):
 
 Engineering rules that apply to every contributor are in [AGENTS.md](AGENTS.md);
 [CLAUDE.md](CLAUDE.md) is a short orientation file, and `.claude/skills/` holds repository-specific
-review checklists (architecture, API, security, test gate).
+review checklists (architecture, API, security, test gate, phase review).
 
 The repository was developed with human direction and AI-assisted coding and review. Every change
 went through the same gate as any other: Ruff, mypy `strict`, the test suite, and the ADR trail for

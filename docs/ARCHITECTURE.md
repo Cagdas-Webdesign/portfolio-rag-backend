@@ -37,6 +37,10 @@ Everything not marked **implemented** is a plan, not a promise.
           └──────────────┘   └────────────────┘
 ```
 
+The grounding check is a second call to an LLM provider. By default it is the generator itself;
+since 1.3.0 it can be a separately configured one (`PORTFOLIO_RAG_GROUNDING_PROVIDER=groq`, the
+Groq adapter) — see *The grounding check on its own port* in [section 6](#6-cross-cutting-concerns).
+
 **The client never reaches past the API.** It has no address for the vector store, the embedding
 provider, the LLM provider, a database or object storage — and never gets one. Everything a client
 can do is expressed in the public REST API, which means credentials, retrieval policy and
@@ -520,6 +524,17 @@ two checks), each with the adapter's bounded transport retries, all inside one r
 caught. Failures keep their root cause: step, category, rule or provider kind, status, attempts,
 `Retry-After`, finish reason, token usage and the provider-call records.
 
+**The grounding check on its own port** (1.3.0). `GroundedAnswerService` takes an optional second
+`LLMProvider` for the check; `rag/service.py` routes exactly one step to it — the grounding check —
+and every generation to the first. The request, the verdict parser, the failure policy and the
+rules are the same either way: the port moved, nothing else. Which adapter answers is decided in
+`composition.py` alone (`build_grounding_provider`): unset, the generator itself, the behaviour
+before the setting existed; `cloudflare_workers_ai`, Workers AI explicitly — the rollback; `groq`,
+the Groq adapter (`infrastructure/llm/groq.py`, `openai/gpt-oss-20b` by default). A selected Groq
+provider without its key refuses to start rather than checking with something else. Every
+provider-call record, the `application started` log line and an evaluation export name the model
+that answered the check.
+
 **Privacy.** The access log records shape, not content: method, path, status, duration. Chat
 messages, prompts, retrieved passages, query strings and request bodies are not logged. Answering a
 question logs an outcome, counts, durations, the embedding space and the generation model — never
@@ -529,11 +544,14 @@ statuses, model and version names — the provider-call record included, which h
 could hold text. The evaluation harness reads a dataset committed to the
 repository and never a real user's question, which is why it needed no opt-in data flow.
 
-**What leaves this process.** Two boundaries, both narrow and both worth stating plainly. The
+**What leaves this process.** Three boundaries, all narrow and all worth stating plainly. The
 embedding provider receives the query representation — the normalized question, and nothing else.
 The generation provider receives the grounding instructions, the selected *public* passages under
-their labels, and the question. Neither receives the corpus, internal documents, fingerprints,
-source paths, chunk ids, vectors, settings or credentials belonging to anything else. The developer
+their labels, and the question. The grounding-check provider — the generator, or Groq when
+configured — receives the check instructions, the question, the answer draft and only the passages
+that answer cited, and only for an answer that passed every earlier check. None receives the corpus,
+internal documents, fingerprints, source paths, chunk ids, vectors, settings or credentials
+belonging to anything else. The developer
 CLI shows more than the API does, deliberately; it still never prints a credential or an
 `Authorization` header, and none of its output is logged.
 
@@ -595,14 +613,16 @@ decision was made.
 | Bounded, labelled, deterministic context building | implemented |
 | Grounded prompt with separated roles + structured answer contract | implemented |
 | Generation providers: deterministic stub (local, offline), Mistral and Cloudflare Workers AI | implemented |
+| Optional reasoning effort for Workers AI (`PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT`) | implemented (1.3.0); unset sends nothing |
+| Grounding check on a separately configured provider — the Groq adapter, no fallback | implemented (1.3.0); unset, the generator checks its own answers |
 | Backend-owned citation validation | implemented |
 | `portfolio-rag knowledge validate` / `inspect` / `chunks` / `embedding` / `index` | implemented |
 | `portfolio-rag query retrieve` / `answer` | implemented |
-| Evaluation harness, dataset, metrics, `portfolio-rag eval run` | implemented |
+| Evaluation harness, datasets, metrics, `portfolio-rag eval run` (retrieval-only and end-to-end, budget-gated, resumable), `eval validate-acceptance` | implemented |
 | Adversarial and failure-matrix test suites | implemented |
 | Rate limiting / abuse protection | deliberately at the deployment edge ([ADR 0008](adr/0008-abuse-boundary-at-the-edge.md)) |
 | Conversation state, persistence, agents, tool calling | deliberately not planned |
-| Production deployment: Docker container on Google Cloud Run, behind the Cloudflare Worker edge gateway | running at v1.0.0 |
+| Production deployment: Docker container on Google Cloud Run, behind the Cloudflare Worker edge gateway | deployed; last verified in [DEPLOYMENT.md](DEPLOYMENT.md) at v1.0.0 |
 
 ## Related documents
 

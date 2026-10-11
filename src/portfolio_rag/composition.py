@@ -26,6 +26,7 @@ from portfolio_rag.application.indexing import IndexingService
 from portfolio_rag.core.config import (
     EmbeddingProviderName,
     Environment,
+    GroundingProviderName,
     LLMProviderName,
     Settings,
     VectorStoreName,
@@ -41,6 +42,7 @@ from portfolio_rag.infrastructure.embedding import (
 from portfolio_rag.infrastructure.knowledge import InMemoryChunkResolver
 from portfolio_rag.infrastructure.llm import (
     DeterministicLLMProvider,
+    GroqChatProvider,
     MistralChatProvider,
     WorkersAIChatProvider,
 )
@@ -101,6 +103,9 @@ class QueryComponents:
     answers: GroundedAnswerService
     chunks: tuple[KnowledgeChunk, ...]
     indexes_on_start: bool
+    #: The adapter that answers the grounding check. ``None`` — or the very same
+    #: object as :attr:`llm` — means the generator checks its own answers.
+    grounding_llm: LLMProvider | None = None
 
     async def prepare(self) -> None:
         """Fill the index, but only when this process is the one that owns it.
@@ -122,7 +127,10 @@ class QueryComponents:
 
     async def aclose(self) -> None:
         """Release adapter resources — HTTP clients, mostly."""
-        for component in (self.embeddings, self.store, self.llm):
+        components: list[object] = [self.embeddings, self.store, self.llm]
+        if self.grounding_llm is not None and self.grounding_llm is not self.llm:
+            components.append(self.grounding_llm)
+        for component in components:
             closer = getattr(component, "aclose", None)
             if closer is not None:
                 await closer()
@@ -275,7 +283,43 @@ def build_llm_provider(
                 model=settings.cloudflare_workers_ai_chat_model,
                 timeout_seconds=settings.provider_timeout_seconds,
                 max_attempts=generation_attempts,
+                reasoning_effort=settings.cloudflare_workers_ai_reasoning_effort,
             )
+
+
+def build_grounding_provider(
+    settings: Settings, *, generation_llm: LLMProvider, generation_attempts: int | None = None
+) -> LLMProvider:
+    """Build the adapter that answers the grounding check.
+
+    Unset: the generation adapter itself, unchanged — the behaviour before the
+    setting existed. ``cloudflare_workers_ai``: the Workers AI adapter, reused
+    when generation already is one, which makes it the rollback target. ``groq``:
+    the Groq adapter, and only that — a missing key refuses to start rather than
+    quietly checking with something else.
+    """
+    selected = settings.grounding_provider
+    if selected is None:
+        return generation_llm
+    if selected is GroundingProviderName.CLOUDFLARE_WORKERS_AI:
+        if settings.llm_provider is LLMProviderName.CLOUDFLARE_WORKERS_AI:
+            return generation_llm
+        return build_llm_provider(
+            settings.model_copy(update={"llm_provider": LLMProviderName.CLOUDFLARE_WORKERS_AI}),
+            generation_attempts=generation_attempts,
+        )
+    if selected is GroundingProviderName.GROQ:
+        if settings.groq_api_key is None or not settings.groq_api_key.get_secret_value():
+            raise ConfigurationError(
+                "The Groq grounding provider needs PORTFOLIO_RAG_GROQ_API_KEY."
+            )
+        return GroqChatProvider(
+            api_key=settings.groq_api_key.get_secret_value(),
+            model=settings.groq_grounding_model,
+            timeout_seconds=settings.provider_timeout_seconds,
+            max_attempts=generation_attempts,
+        )
+    raise ConfigurationError(f"Unknown grounding provider: {selected}")  # pragma: no cover
 
 
 def build_retrieval_policy(settings: Settings) -> RetrievalPolicy:
@@ -359,6 +403,9 @@ def build_query_components(
     chunks = load_corpus_chunks(settings.knowledge_root)
     resolver = InMemoryChunkResolver(chunks)
     llm = build_llm_provider(settings, generation_attempts=generation_attempts)
+    grounding_llm = build_grounding_provider(
+        settings, generation_llm=llm, generation_attempts=generation_attempts
+    )
 
     retrieval = PublicRetrievalService(
         embeddings=embeddings,
@@ -375,11 +422,15 @@ def build_query_components(
         answers=GroundedAnswerService(
             retrieval=retrieval,
             llm=llm,
+            # Only a genuinely separate adapter is an override; otherwise the
+            # generator checks its own answers, exactly as before.
+            grounding_llm=grounding_llm if grounding_llm is not llm else None,
             context_policy=ContextPolicy(),
             deadline_seconds=settings.request_deadline_seconds,
         ),
         chunks=chunks,
         indexes_on_start=settings.vector_store is VectorStoreName.MEMORY,
+        grounding_llm=grounding_llm,
     )
 
 

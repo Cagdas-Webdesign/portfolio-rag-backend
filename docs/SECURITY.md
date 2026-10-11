@@ -60,6 +60,7 @@ deployment, the realistic exposure is small — but it is not zero, and it is no
 | --- | --- | --- |
 | Embedding provider | At indexing: document title, heading path, chunk content. At query time: the normalized question | Visibility, trust level, source paths, fingerprints, ids, internal documents |
 | Generation provider | Grounding instructions, the selected **public** passages under their labels, the question | The corpus, internal documents, fingerprints, source paths, chunk ids, vectors, other settings |
+| Grounding-check provider — the generation provider by default; **Groq** when `PORTFOLIO_RAG_GROUNDING_PROVIDER=groq` | The grounding-check instructions, the passages the answer **cited** (labels included), the question and the answer draft — only for an answer that passed every earlier check. Groq is asked for the verdict only (`include_reasoning: false`) | Passages the answer did not cite, the corpus, internal documents, fingerprints, source paths, chunk ids, vectors, other settings, other providers' credentials |
 | Vector store | Vectors, and a chosen metadata list (ids, title, heading path, source path, type, language, visibility, trust level, topics, technologies) | Chunk text — it is resolved locally from `knowledge/` |
 | Public client | The answer, and verified citations (document id, title, source, section) | Everything else |
 
@@ -145,5 +146,13 @@ validation, and `allow_credentials` is `False` because there is no cookie or cre
   that must not be weakened.
 * **A stale index** can surface a chunk id the corpus no longer has. It is dropped and counted, so
   the effect is a thinner answer, not a wrong one.
+* **A grounding check on Groq adds a processor and a point of failure** (optional since 1.3.0). The
+  visitor's question, the answer draft and the cited public passages reach one more provider, so a
+  privacy notice that names the providers should name Groq too. Its key is a `SecretStr`, read from
+  the environment, never logged, and its error messages are composed locally, as for every other
+  adapter. A Groq outage or rate limit (429 is not retried) ends answers as `503` — by design, with
+  no fallback to an unchecked answer or another checker; the rollback is configuration
+  ([DEPLOYMENT.md](DEPLOYMENT.md#rollback)). And a model judging a model is a second opinion, not a
+  proof.
 * **No audit trail.** Nothing records who asked what, deliberately — there is no user to attribute a
   question to, and storing questions would create a privacy obligation the system does not need.

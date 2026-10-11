@@ -191,6 +191,44 @@ def _body(recorder: _Recorder) -> dict[str, Any]:
     return dict(json.loads(recorder.requests[0].content))
 
 
+# --- reasoning effort (experimental, off by default) --------------------------
+
+
+def test_no_reasoning_field_is_sent_by_default():
+    """Unset means the request is exactly what it always was."""
+    provider, recorder = make_provider()
+
+    run(provider.generate(REQUEST))
+
+    assert "reasoning" not in _body(recorder)
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_a_configured_reasoning_effort_is_sent_as_a_reasoning_object(effort: str):
+    provider, recorder = make_provider(reasoning_effort=effort)
+
+    run(provider.generate(REQUEST))
+
+    body = _body(recorder)
+    assert body["reasoning"] == {"effort": effort}
+    assert "messages" in body, "the request format does not change"
+
+
+def test_the_reasoning_effort_applies_to_every_call_of_the_adapter():
+    """Generation and grounding check share one adapter, so both get it."""
+    provider, recorder = make_provider(reasoning_effort="low")
+
+    run(provider.generate(REQUEST))
+    run(provider.generate(REQUEST))
+
+    import json
+
+    assert [json.loads(r.content)["reasoning"] for r in recorder.requests] == [
+        {"effort": "low"},
+        {"effort": "low"},
+    ]
+
+
 # --- the answer ---------------------------------------------------------------
 
 

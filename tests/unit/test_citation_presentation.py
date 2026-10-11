@@ -590,3 +590,106 @@ def test_keeping_content_does_not_touch_citations_or_numbering():
 
     assert presented.answer == "Er nutzt FastAPI [1]."
     assert presented.citations == outcome.citations
+
+
+# --- marks written in another shape (v1.2.1) -----------------------------------
+#
+# The source list forgives case, brackets and blanks, so `[s1]` is a verified
+# citation with its button under the answer. The mark in the text has to be
+# recognised with the same tolerance, or it stays visible next to that button.
+
+MARK_VARIANTS = {
+    "lower case": "[s{n}]",
+    "inner blanks": "[ S{n} ]",
+    "non-breaking blank": "[S{n}\u00a0]",
+    "zero-width blank": "[\u200bS{n}]",
+    "full-width brackets": "\uff3bS{n}\uff3d",
+    "lenticular brackets": "\u3010S{n}\u3011",
+    "escaped brackets": "\\[S{n}\\]",
+    "locator suffix": "[S{n}\u2020L3-L5]",
+    "blank inside the label": "[S {n}]",
+}
+
+
+def mark(shape: str, n: int) -> str:
+    return MARK_VARIANTS[shape].format(n=n)
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_a_variant_mark_inside_a_paragraph_becomes_its_number(shape: str):
+    presented, _ = present(f"Er nutzt FastAPI {mark(shape, 2)} im Backend.", "S2")
+
+    assert presented.answer == "Er nutzt FastAPI [1] im Backend."
+    assert not INTERNAL_LABEL.search(presented.answer)
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_a_variant_mark_at_the_end_of_a_sentence(shape: str):
+    presented, _ = present(f"Er automatisiert Lead-Flows {mark(shape, 1)}. Danach mehr.", "S1")
+
+    assert presented.answer == "Er automatisiert Lead-Flows [1]. Danach mehr."
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_variant_marks_in_a_bullet_list(shape: str):
+    text = (
+        f"Automation:\n- HubSpot {mark(shape, 1)}\n- Slack {mark(shape, 2)}"
+        f"\n- E-Mail {mark(shape, 3)}"
+    )
+    presented, _ = present(text, "S1", "S2", "S3")
+
+    assert presented.answer == "Automation:\n- HubSpot [1]\n- Slack [2]\n- E-Mail [3]"
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_several_variant_marks_in_a_row(shape: str):
+    text = f"Antworttext {mark(shape, 1)}{mark(shape, 2)} {mark(shape, 3)}."
+    presented, _ = present(text, "S1", "S2", "S3")
+
+    assert presented.answer == "Antworttext [1][2] [3]."
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_an_unverified_variant_mark_is_removed_not_renumbered(shape: str):
+    presented, _ = present(f"Er nutzt FastAPI {mark(shape, 9)}.", "S1")
+
+    assert presented.answer == "Er nutzt FastAPI."
+    assert presented.removed_marks == 1
+
+
+def test_a_variant_list_of_labels_is_handled_label_by_label():
+    presented, _ = present("Text [s1, S2; s3] und \u3010S1\u2013S3\u3011.", "S1", "S2", "S3")
+
+    assert presented.answer == "Text [1] [2] [3] und [1] [3]."
+
+
+def test_variant_marks_do_not_change_the_citations():
+    """The buttons are exactly what validation produced: same sources, same order."""
+    presented, outcome = present("A \u3010S1\u3011, B [ s2 ].", "S1", "S2")
+
+    assert presented.citations == outcome.citations
+    assert [citation.title for citation in presented.citations] == ["Doc 1", "Doc 2"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Siehe [Seite 1] und \u3010Hinweis\u3011.",
+        "Dateien liegen im [S3-Bucket].",
+        "Ein leeres [S] und ein [Sx1].",
+        "Markdown-Links wie [Doku](https://example.com/S1) bleiben.",
+    ],
+)
+def test_bracketed_text_that_is_not_a_label_is_unchanged(text: str):
+    presented, _ = present(text, "S1")
+
+    assert presented.answer == text
+
+
+@pytest.mark.parametrize("shape", MARK_VARIANTS)
+def test_the_leak_gate_recognises_every_variant(shape: str):
+    assert INTERNAL_LABEL.search(f"Text {mark(shape, 1)}.")
+
+
+def test_the_leak_gate_does_not_flag_public_marks_or_ordinary_brackets():
+    assert not INTERNAL_LABEL.search("Text [1] [2], [Seite 1], \u3010Hinweis\u3011, [S3-Bucket].")

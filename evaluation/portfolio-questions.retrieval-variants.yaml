@@ -1,0 +1,185 @@
+# Retrieval variants — one intent, several wordings (2026-10-11).
+#
+# Diagnostic only, scored separately from the release-acceptance suite and the
+# retrieval probes; neither of those is changed or extended by this file. Each
+# group asks one intent with the subject named ("Çağdaş"), as a pronoun ("er")
+# or impersonally, and some with synonyms ("künstliche Intelligenz" next to
+# "KI", "Scroll-Animationen" next to the paraphrase the frozen suite uses).
+# Ids share a group prefix; the suffix names the wording:
+#
+#   -name     names Çağdaş        -pronoun   "er" / "sein"
+#   -neutral  no person at all    -synonym   the same intent in other words
+#
+# Ground truth follows the dataset convention: a section counts when, read
+# alone, it helps answer the question; the first one is the primary evidence.
+# Within a group every wording expects the same sources, so a rank difference
+# inside a group is caused by the wording and nothing else.
+
+version: 1
+corpus: ../knowledge
+
+questions:
+  # --- AI technologies ---------------------------------------------------------
+  - id: ai-tech-name
+    category: multi_source
+    question: Welche KI-Technologien nutzt Çağdaş?
+    expected_sources: &ai_tech
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: portfolio-capabilities-and-evidence
+        section: API- und Systemintegration
+  - id: ai-tech-pronoun
+    category: multi_source
+    question: Welche KI-Technologien nutzt er?
+    expected_sources: *ai_tech
+  - id: ai-tech-neutral
+    category: multi_source
+    question: Welche KI-Technologien werden im Portfolio-Backend eingesetzt?
+    expected_sources: *ai_tech
+  - id: ai-tech-synonym
+    category: paraphrased
+    question: Welche Technologien für künstliche Intelligenz setzt Çağdaş ein?
+    expected_sources: *ai_tech
+
+  # --- frontend, backend and AI together ---------------------------------------------
+  - id: stack-connect-name
+    category: multi_source
+    question: Wie verbindet Çağdaş Frontend, Backend und KI?
+    expected_sources: &stack_connect
+      - document: portfolio-capabilities-and-evidence
+        section: Full-Stack als Gesamtzusammenhang
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: api-backend-databases
+        section: Positionierung
+      - document: react-portfolio
+        section: Portfolio Assistant Integration
+      - document: react-portfolio
+        section: Trennung der Projekte
+  - id: stack-connect-synonym
+    category: multi_source
+    question: Wie verbindet Çağdaş Frontend, Backend und künstliche Intelligenz?
+    expected_sources: *stack_connect
+  - id: stack-connect-neutral
+    category: multi_source
+    question: Wie arbeiten Frontend, Backend und KI im Portfolio zusammen?
+    expected_sources: *stack_connect
+
+  # --- scroll and motion -----------------------------------------------------------
+  - id: scroll-name
+    category: direct
+    question: Womit setzt Çağdaş Scroll-Animationen um?
+    expected_sources: &scroll
+      - document: react-portfolio
+        section: GSAP
+      - document: react-portfolio
+        section: Visuelle Erklärung komplexer Abläufe
+      - document: fullstack-web-development
+        section: Frontend Development
+  - id: scroll-pronoun
+    category: direct
+    question: Welche Technologie nutzt er für scrollbasierte Animationen?
+    expected_sources: *scroll
+  - id: motion-name
+    category: paraphrased
+    question: Welche Tools nutzt Çağdaş für Motion Design?
+    expected_sources:
+      - document: fullstack-web-development
+        section: Motion und Web Animation
+      - document: react-portfolio
+        section: Framer Motion
+      - document: react-portfolio
+        section: GSAP
+      - document: react-portfolio
+        section: Motion als Teil der User Experience
+
+  # --- automation ------------------------------------------------------------------
+  - id: automation-name
+    category: paraphrased
+    question: Welche Automatisierungstools verwendet Çağdaş?
+    expected_sources: &automation
+      - document: automation-email-marketing
+        section: Make, Zapier und n8n
+      - document: automation-email-marketing
+        section: Automation
+  - id: automation-neutral
+    category: paraphrased
+    question: Welche Tools werden für Automatisierungen eingesetzt?
+    expected_sources: *automation
+
+  # --- sections that do not name him ---------------------------------------------------
+  - id: github-name
+    category: direct
+    question: Hat Çağdaş ein GitHub-Profil?
+    expected_sources: &github
+      - document: job-fit-and-contact
+        section: GitHub
+  - id: github-neutral
+    category: direct
+    question: Gibt es ein GitHub-Profil?
+    expected_sources: *github
+
+  - id: components-name
+    category: section
+    question: Wie strukturiert Çağdaş die Komponenten seines React-Portfolios?
+    expected_sources: &components
+      - document: react-portfolio
+        section: Component Architecture
+  - id: components-neutral
+    category: section
+    question: Wie ist das React-Portfolio in Komponenten aufgeteilt?
+    expected_sources: *components
+
+  - id: responsive-name
+    category: section
+    question: Ist Çağdaş' Portfolio auch für Smartphones optimiert?
+    expected_sources: &responsive
+      - document: react-portfolio
+        section: Responsive Design
+  - id: responsive-neutral
+    category: section
+    question: Ist das Portfolio auch für Smartphones optimiert?
+    expected_sources: *responsive
+
+  - id: injection-name
+    category: section
+    question: Wie schützt Çağdaş seinen Chatbot vor Prompt Injection?
+    expected_sources: &injection
+      - document: custom-rag-backend
+        section: Prompt Injection
+  - id: injection-neutral
+    category: section
+    question: Wie schützt das Backend vor Prompt Injection?
+    expected_sources: *injection
+
+  - id: testing-name
+    category: section
+    question: Wie testet Çağdaş sein RAG-Backend?
+    expected_sources: &testing
+      - document: custom-rag-backend
+        section: Testing
+      - document: custom-rag-backend
+        section: Evaluation
+  - id: testing-neutral
+    category: section
+    question: Wie wird das RAG-Backend getestet?
+    expected_sources: *testing
+
+  - id: slack-name
+    category: section
+    question: Kann Çağdaş Slack in automatisierte Abläufe einbinden?
+    expected_sources: &slack
+      - document: automation-email-marketing
+        section: Slack
+      - document: automation-email-marketing
+        section: HubSpot zu Automation zu Slack
+      - document: automation-email-marketing
+        section: Custom Slack Bots
+  - id: slack-neutral
+    category: section
+    question: Wie kann Slack in automatisierte Abläufe eingebunden werden?
+    expected_sources: *slack

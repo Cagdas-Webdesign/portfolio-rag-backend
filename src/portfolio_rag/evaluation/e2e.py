@@ -57,6 +57,7 @@ from portfolio_rag.rag.errors import GenerationFailure, RetrievalFailure
 from portfolio_rag.rag.generation import SupportVerdict
 from portfolio_rag.rag.language import INSUFFICIENT_KNOWLEDGE_ANSWERS
 from portfolio_rag.rag.policy import ContextPolicy
+from portfolio_rag.rag.presentation import MARK_VARIANT_PATTERN
 from portfolio_rag.rag.prompt import GROUNDED_RESPONSE_FORMAT
 from portfolio_rag.rag.retrieval import RetrievalOutcome
 from portfolio_rag.rag.service import (
@@ -96,9 +97,10 @@ E2E_FORMAT_VERSION: Final = "e2e-eval-v3"
 #: means presentation let something through that a reader was never meant to see.
 #: Besides ``[S1]``, ``(S1, S2)`` and ``SOURCE S1``: several labels in one
 #: bracket, a source word followed by a label (``Quellen S1``), and a list of
-#: bare labels (``S2, S3 und S5``) — the forms presentation removes since v1.2.1.
+#: bare labels (``S2, S3 und S5``) — the forms presentation removes since v1.2.1 —
+#: and every bracketed variant presentation canonicalises (``[s1]``, ``【S1】``, …).
 INTERNAL_LABEL: Final = re.compile(
-    r"\[S\d+(?:\s*[,;]\s*S\d+)*\]"
+    MARK_VARIANT_PATTERN.replace("?P<labels>", "?:") + r"|\[S\d+(?:\s*[,;]\s*S\d+)*\]"
     r"|\(S\d+(?:\s*,\s*S\d+)*\)"
     r"|\b(?:SOURCES?|[Ss]ources?|Quellen?|Quellenangaben?)\s*:?\s*S\d+\b"
     r"|(?<![\w/\-\[(])S\d+(?:\s*\([^()\n]*\))?(?:\s*(?:,|;|&|\bund\b|\band\b)\s*S\d+\b)+"
@@ -540,6 +542,9 @@ class E2ERunMetadata:
     notes: tuple[str, ...] = ()
     """Free text from whoever started the run: known conditions a reader needs
     in order to interpret the numbers."""
+    grounding_check_provider: str | None = None
+    """Who answered the grounding check. ``None``: the generation provider."""
+    grounding_check_model: str | None = None
 
     selected_question_ids: tuple[str, ...] = ()
     """The ids the run was narrowed to, when it was. Empty for a whole suite."""
@@ -588,6 +593,11 @@ def export_e2e(
             "generation": {
                 "provider": metadata.generation_provider,
                 "model": metadata.generation_model,
+                "grounding_check_provider": (
+                    metadata.grounding_check_provider or metadata.generation_provider
+                ),
+                "grounding_check_model": metadata.grounding_check_model
+                or metadata.generation_model,
                 "prompt_version": metadata.prompt_version,
                 "grounding_check_version": GROUNDING_CHECK_VERSION,
                 "response_format": GROUNDED_RESPONSE_FORMAT.value,

@@ -1,0 +1,217 @@
+# Retrieval probes — diagnostic questions for the real portfolio corpus.
+#
+# NOT a release suite. The release-acceptance suite and `portfolio-questions.yaml`
+# stay frozen; nothing here changes what a release acceptance asks or gates.
+# These questions cover what the 2026-10-11 retrieval audit found the frozen
+# set does not: project overviews, AI-technology questions, services, social
+# media, and several wordings of one intent. Retrieval only:
+#
+#   uv run portfolio-rag eval run --dataset evaluation/portfolio-questions.retrieval-probes.yaml \
+#     --retrieval-only --top-k 30 --min-similarity -1 --output evaluation/results/<name>.json
+#
+# Ground truth follows the dataset convention: a section counts when, read
+# alone, it helps answer the question. **The first expected source of each
+# question is its primary evidence**; the rest are supplementary. Sections are
+# named by an inner heading, never by a document title — a title is in every
+# chunk's heading path and would make the whole document count.
+#
+# `professional-profile › Projekte im Überblick` is expected by the project
+# questions although it does not exist in the corpus before 2026-10-11: it is
+# the overview the audit found missing (finding F4). A run before it exists
+# cannot find it, and that is the measurement.
+
+version: 1
+corpus: ../knowledge
+
+questions:
+  # --- project overview: three wordings of one intent ----------------------
+  - id: probe-projects-implemented
+    category: multi_source
+    question: Welche Projekte hat Çağdaş umgesetzt?
+    expected_sources:
+      - document: professional-profile
+        section: Projekte im Überblick
+      - document: portfolio-capabilities-and-evidence
+        section: Portfolio als technischer Kompetenznachweis
+      - document: react-portfolio
+        section: Trennung der Projekte
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+      - document: job-fit-and-contact
+        section: Technische Nachweise im Portfolio
+
+  - id: probe-projects-worked-on
+    category: paraphrased
+    question: An welchen Projekten hat Çağdaş gearbeitet?
+    expected_sources:
+      - document: professional-profile
+        section: Projekte im Überblick
+      - document: portfolio-capabilities-and-evidence
+        section: Portfolio als technischer Kompetenznachweis
+      - document: react-portfolio
+        section: Trennung der Projekte
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+      - document: job-fit-and-contact
+        section: Technische Nachweise im Portfolio
+
+  - id: probe-projects-built-so-far
+    category: paraphrased
+    question: Was hat Çağdaş bisher entwickelt?
+    expected_sources:
+      - document: professional-profile
+        section: Projekte im Überblick
+      - document: portfolio-capabilities-and-evidence
+        section: Portfolio als technischer Kompetenznachweis
+      - document: react-portfolio
+        section: Trennung der Projekte
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+
+  - id: probe-projects-showing-skills
+    category: multi_source
+    question: Welche Projekte zeigen seine technischen Fähigkeiten?
+    expected_sources:
+      - document: job-fit-and-contact
+        section: Technische Nachweise im Portfolio
+      - document: professional-profile
+        section: Projekte im Überblick
+      - document: portfolio-capabilities-and-evidence
+        section: Portfolio als technischer Kompetenznachweis
+      - document: react-portfolio
+        section: Positionierung
+      - document: custom-rag-backend
+        section: Portfolio-Relevanz
+
+  # --- technologies -----------------------------------------------------------
+  - id: probe-ai-technologies
+    category: multi_source
+    question: Welche KI-Technologien setzt Çağdaş ein?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: portfolio-capabilities-and-evidence
+        section: API- und Systemintegration
+      - document: social-media-content
+        section: ElevenLabs
+
+  - id: probe-rag-technologies
+    category: multi_source
+    question: Welche Technologien verwendet er für sein RAG-System?
+    expected_sources:
+      - document: custom-rag-backend
+        section: Technologie-Stack
+      - document: professional-profile
+        section: AI and RAG Development
+      - document: portfolio-capabilities-and-evidence
+        section: API- und Systemintegration
+      - document: custom-rag-backend
+        section: Embeddings
+      - document: custom-rag-backend
+        section: LLM Generation
+
+  - id: probe-web-tools
+    category: multi_source
+    question: Mit welchen Tools entwickelt Çağdaş Webanwendungen?
+    expected_sources:
+      - document: professional-profile
+        section: Technical Profile
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: react-portfolio
+        section: Technische Basis
+      - document: wordpress-woocommerce
+        section: WordPress Development
+
+  # --- web development services -------------------------------------------------
+  - id: probe-web-services
+    category: multi_source
+    question: Welche Leistungen kann Çağdaş im Bereich Webentwicklung anbieten?
+    expected_sources:
+      - document: wordpress-woocommerce
+        section: WordPress Development
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: fullstack-web-development
+        section: Backend Development
+      - document: plugin-development
+        section: Custom Plugin Development
+      - document: wordpress-woocommerce
+        section: Positionierung
+      - document: professional-profile
+        section: Technical Profile
+
+  - id: probe-modern-website
+    category: paraphrased
+    question: Was kann Çağdaş für eine moderne Website umsetzen?
+    expected_sources:
+      - document: wordpress-woocommerce
+        section: WordPress Development
+      - document: fullstack-web-development
+        section: Frontend Development
+      - document: professional-profile
+        section: Frontend, UI and Web Experience
+      - document: wordpress-woocommerce
+        section: Positionierung
+      - document: working-style
+        section: Design und User Experience
+
+  # --- social media -----------------------------------------------------------
+  - id: probe-social-media-experience
+    category: multi_source
+    question: Welche Erfahrungen hat Çağdaş im Bereich Social Media?
+    expected_sources:
+      - document: social-media-content
+        section: Social Media Management
+      - document: education-and-qualifications
+        section: Social Media Management
+      - document: social-media-content
+        section: Content Creation
+      - document: social-media-content
+        section: Plattformen
+      - document: professional-profile
+        section: Marketing and Digital Communication
+
+  - id: probe-social-media-and-web
+    category: multi_source
+    question: Wie verbindet Çağdaş Social Media und Webentwicklung?
+    expected_sources:
+      - document: social-media-content
+        section: Website und Social Media
+      - document: social-media-content
+        section: Verbindung von Technik und Content
+      - document: portfolio-capabilities-and-evidence
+        section: Social Media und Campaign Design
+      - document: working-style
+        section: Verbindung mit Marketing und Content
+      - document: professional-profile
+        section: Marketing and Digital Communication
+
+  # --- several documents ---------------------------------------------------------
+  - id: probe-frontend-backend-ai
+    category: multi_source
+    question: Wie verbindet Çağdaş Frontend, Backend und künstliche Intelligenz?
+    expected_sources:
+      - document: portfolio-capabilities-and-evidence
+        section: Full-Stack als Gesamtzusammenhang
+      - document: react-portfolio
+        section: Portfolio Assistant Integration
+      - document: portfolio-capabilities-and-evidence
+        section: API- und Systemintegration
+      - document: react-portfolio
+        section: Trennung der Projekte
+      - document: custom-rag-backend
+        section: FastAPI API
+      - document: professional-profile
+        section: AI and RAG Development
+
+  # --- must refuse: the overview must not make client work appear ----------------
+  - id: probe-unknown-client-projects
+    category: unknown
+    question: Welche Kundenprojekte hat Çağdaş für große Unternehmen umgesetzt?

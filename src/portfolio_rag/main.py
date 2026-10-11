@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "cors_origins": len(settings.allowed_origins),
             "embedding_space": components.embeddings.spec.identity,
             "generation_model": components.llm.model,
+            "grounding_check_model": (components.grounding_llm or components.llm).model,
             "corpus_chunks": len(components.chunks),
         },
     )

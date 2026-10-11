@@ -391,13 +391,21 @@ version: the package build reads it (`[tool.hatch.version]`, `version` is `dynam
 `pyproject.toml`), `/health` and OpenAPI default to it, and every export records it as
 `run.project_version`. A test asserts there is no second one.
 
-It is **1.2.1**. `v1.0.0`, `v1.0.1`, `v1.1.0`, `v1.1.1`, `v1.1.2` and `v1.2.0` are historical tags. 1.1.0 added,
+It is **1.3.0**. `v1.0.0`, `v1.0.1`, `v1.1.0`, `v1.1.1`, `v1.1.2`, `v1.2.0` and `v1.2.1` are historical tags. 1.1.0 added,
 among others, the optional `conversation` request field; 1.1.2 the output-limit recovery and the
 reserve override. 1.2.0 adds resumable acceptance runs (checkpoint, logical-run lock, protocol
 `release-acceptance-v2`), the provider canary, output-cap-aware request timeouts, 429 codes and
 retrieval pause/resume, so it is a new minor release, not 1.1.3. 1.2.1 is a presentation-only fix:
 internal source labels written as prose references (`[S2, S3]`, `Quellen S1, S2`, `S2, S3 und S5`)
-no longer reach the answer text, and the label-leak gate recognises those forms; `v1.2.0-accepted`
+no longer reach the answer text, and the label-leak gate recognises those forms. 1.3.0 adds
+optional configuration, so it is a new minor release: a grounding check on its own provider
+(`PORTFOLIO_RAG_GROUNDING_PROVIDER`, with a Groq adapter; unset, the generator checks its own
+answers exactly as before), an optional reasoning effort for Workers AI
+(`PORTFOLIO_RAG_CLOUDFLARE_WORKERS_AI_REASONING_EFFORT`; unset, nothing is sent), bracketed
+source-mark variants (`[s1]`, `【S1】`, …) canonicalised before renumbering and recognised by the
+leak gate, exports that record which provider and model answered the grounding check, and the
+corpus at 13 documents and 162 chunks. Retrieval, prompts, the grounding criteria and citation
+validation are unchanged. No release acceptance has been run for 1.3.0: `v1.2.0-accepted`
 remains the accepted baseline. The tag
 is set by hand, as `v` + the version, on the commit that passed — nothing here creates, moves or
 pushes one. The tag is optional: an untagged commit is a valid candidate (`git_tag: null`), but a

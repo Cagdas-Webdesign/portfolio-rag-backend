@@ -292,6 +292,9 @@ def test_the_export_names_its_run_and_every_question():
     assert payload["run"]["generation"] == {
         "provider": "scripted",
         "model": ScriptedLLMProvider.MODEL,
+        # No separate grounding provider: the generator checks its own answers.
+        "grounding_check_provider": "scripted",
+        "grounding_check_model": ScriptedLLMProvider.MODEL,
         "prompt_version": "grounded-answer-v3",
         "grounding_check_version": GROUNDING_CHECK_VERSION,
         "response_format": "json_object",

@@ -15,6 +15,7 @@ import pytest
 from portfolio_rag.composition import (
     ConfigurationError,
     build_embedding_provider,
+    build_grounding_provider,
     build_llm_provider,
     build_query_components,
     build_retrieval_policy,
@@ -23,6 +24,7 @@ from portfolio_rag.composition import (
 from portfolio_rag.core.config import (
     EmbeddingProviderName,
     Environment,
+    GroundingProviderName,
     LLMProviderName,
     LogLevel,
     Settings,
@@ -34,6 +36,7 @@ from portfolio_rag.infrastructure.embedding import (
 )
 from portfolio_rag.infrastructure.llm import (
     DeterministicLLMProvider,
+    GroqChatProvider,
     MistralChatProvider,
     WorkersAIChatProvider,
 )
@@ -170,6 +173,22 @@ def test_workers_ai_generates_with_the_configured_model():
 
     assert provider.model == "@cf/meta/llama-3.1-8b-instruct"
     run(provider.aclose())  # type: ignore[attr-defined]
+
+
+def test_workers_ai_sends_no_reasoning_effort_unless_configured():
+    provider = build_llm_provider(workers_ai())
+
+    assert isinstance(provider, WorkersAIChatProvider)
+    assert provider._reasoning_effort is None
+    run(provider.aclose())
+
+
+def test_a_configured_workers_ai_reasoning_effort_reaches_the_adapter():
+    provider = build_llm_provider(workers_ai(cloudflare_workers_ai_reasoning_effort="low"))
+
+    assert isinstance(provider, WorkersAIChatProvider)
+    assert provider._reasoning_effort == "low"
+    run(provider.aclose())
 
 
 def test_the_workers_ai_default_model_is_the_one_this_project_runs_on():
@@ -386,3 +405,106 @@ def test_every_chunk_of_the_corpus_is_resolvable_by_id():
     resolved = run(components.resolver.resolve([chunk.id for chunk in components.chunks]))
 
     assert len(resolved) == len(components.chunks)
+
+
+# --- the grounding provider, chosen on its own ---------------------------------------
+
+FAKE_GROQ_KEY = "gsk_test_not_a_real_credential"
+
+
+def groq_grounding(**overrides: object) -> Settings:
+    """Workers AI generates, Groq checks — the target configuration."""
+    fields: dict[str, object] = {
+        "grounding_provider": GroundingProviderName.GROQ,
+        "groq_api_key": FAKE_GROQ_KEY,
+    }
+    fields.update(overrides)
+    return workers_ai(**fields)
+
+
+def test_without_a_grounding_provider_the_generator_checks_its_own_answers():
+    settings = workers_ai()
+    generation = build_llm_provider(settings)
+
+    assert build_grounding_provider(settings, generation_llm=generation) is generation
+    run(generation.aclose())  # type: ignore[attr-defined]
+
+
+def test_groq_can_check_while_workers_ai_generates():
+    settings = groq_grounding()
+    generation = build_llm_provider(settings)
+    checker = build_grounding_provider(settings, generation_llm=generation)
+
+    assert isinstance(generation, WorkersAIChatProvider)
+    assert isinstance(checker, GroqChatProvider)
+    assert checker.model == "openai/gpt-oss-20b"
+    run(generation.aclose())
+    run(checker.aclose())
+
+
+def test_the_groq_model_is_configurable():
+    settings = groq_grounding(groq_grounding_model="openai/gpt-oss-120b")
+    checker = build_grounding_provider(settings, generation_llm=build_llm_provider(settings))
+
+    assert checker.model == "openai/gpt-oss-120b"
+
+
+@pytest.mark.parametrize("key", [None, "", "   "])
+def test_groq_without_a_key_refuses_to_start_and_never_falls_back(key: object):
+    settings = groq_grounding(groq_api_key=key)
+
+    with pytest.raises(ConfigurationError, match="PORTFOLIO_RAG_GROQ_API_KEY"):
+        build_grounding_provider(settings, generation_llm=build_llm_provider(settings))
+    with pytest.raises(ConfigurationError, match="PORTFOLIO_RAG_GROQ_API_KEY"):
+        build_query_components(settings)
+
+
+def test_cloudflare_grounding_is_the_rollback_and_reuses_the_generator():
+    settings = workers_ai(grounding_provider=GroundingProviderName.CLOUDFLARE_WORKERS_AI)
+    generation = build_llm_provider(settings)
+
+    assert build_grounding_provider(settings, generation_llm=generation) is generation
+    run(generation.aclose())  # type: ignore[attr-defined]
+
+
+def test_cloudflare_grounding_with_another_generator_builds_workers_ai():
+    settings = local(
+        llm_provider=LLMProviderName.MISTRAL,
+        mistral_api_key=FAKE_KEY,
+        grounding_provider=GroundingProviderName.CLOUDFLARE_WORKERS_AI,
+        cloudflare_account_id=FAKE_ACCOUNT,
+        cloudflare_workers_ai_token=FAKE_WORKERS_AI_TOKEN,
+    )
+    generation = build_llm_provider(settings)
+    checker = build_grounding_provider(settings, generation_llm=generation)
+
+    assert isinstance(generation, MistralChatProvider)
+    assert isinstance(checker, WorkersAIChatProvider)
+
+
+def test_the_query_stack_wires_groq_as_the_checker_and_closes_it():
+    components = build_query_components(groq_grounding())
+
+    assert isinstance(components.llm, WorkersAIChatProvider)
+    assert isinstance(components.grounding_llm, GroqChatProvider)
+    assert components.answers._grounding_llm is components.grounding_llm
+    assert components.answers._llm is components.llm
+    run(components.aclose())
+
+
+def test_the_query_stack_without_groq_is_unchanged():
+    components = build_query_components(workers_ai())
+
+    assert components.answers._grounding_override is None
+    assert components.answers._grounding_llm is components.llm
+    run(components.aclose())
+
+
+def test_groq_grounding_needs_no_change_to_generation_or_retrieval():
+    with_groq = build_query_components(groq_grounding())
+    without = build_query_components(workers_ai())
+
+    assert with_groq.llm.model == without.llm.model == "@cf/openai/gpt-oss-120b"
+    assert with_groq.retrieval.policy == without.retrieval.policy
+    run(with_groq.aclose())
+    run(without.aclose())

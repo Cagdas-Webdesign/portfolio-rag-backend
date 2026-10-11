@@ -12,17 +12,18 @@ topics:
   - api-integration
 technologies:
   - React
-  - TypeScript
   - JavaScript
   - HTML
   - CSS
   - Framer Motion
   - GSAP
   - Figma
+  - Vite
+  - Node.js
 source: "Çağdaş Uçar"
 source_type: authored
-version: 1
-updated_at: 2026-08-18
+version: 4
+updated_at: 2026-10-11
 visibility: public
 trust_level: authoritative
 ---
@@ -33,11 +34,13 @@ trust_level: authoritative
 
 ## Technische Basis
 
-Das Portfolio ist als moderne React-Anwendung aufgebaut.
+Çağdaş' Portfolio ist als moderne React-Anwendung aufgebaut.
 
-Zum Frontend-Stack gehören insbesondere React, TypeScript, JavaScript, HTML, CSS, Framer Motion und GSAP.
+Zum Frontend-Stack gehören insbesondere React, JavaScript, HTML, CSS, Framer Motion und GSAP.
 
-React bildet die komponentenbasierte Grundlage der Anwendung. TypeScript erweitert die JavaScript-Entwicklung um statische Typisierung und unterstützt eine strukturiertere und besser überprüfbare Codebasis.
+React bildet die komponentenbasierte Grundlage der Anwendung.
+
+Das React-Portfolio nutzt Node.js als Entwicklungs- und Build-Umgebung, unter anderem für den Vite-basierten Frontend-Workflow.
 
 ## Component Architecture
 
@@ -53,7 +56,7 @@ Die Komponentenstruktur soll dabei nicht unnötig kompliziert sein. Eine Kompone
 
 ## TypeScript und Frontend Contracts
 
-TypeScript wird nicht nur als zusätzliche Syntax betrachtet.
+TypeScript gehört zu Çağdaş' allgemeinen Frontend-Kenntnissen und wird dabei nicht nur als zusätzliche Syntax betrachtet. Für das aktuelle Portfolio ist React mit JavaScript die Umsetzungsbasis.
 
 Typen helfen dabei, klar zu definieren, welche Daten eine Komponente erwartet und welche Strukturen innerhalb der Anwendung verarbeitet werden.
 
@@ -113,6 +116,16 @@ Motion kann dabei helfen, Aufmerksamkeit zu führen, Zustandsänderungen verstä
 
 Die technische Qualität einer Animation umfasst deshalb nicht nur ihre Optik, sondern auch Timing, Performance, Responsiveness und ihre Funktion innerhalb der Benutzeroberfläche.
 
+## Visuelle Erklärung komplexer Abläufe
+
+Animation und Interaktion setzt Çağdaş im Portfolio nicht nur dekorativ ein. Komplexe technische und geschäftliche Abläufe werden schrittweise über interaktive und responsive Interfaces vermittelt.
+
+Auf größeren Displays laufen erklärender Inhalt und die zugehörige Visualisierung parallel. Auf kleineren Displays wird dieselbe Informationsstruktur responsiv neu angeordnet, damit der Ablauf weiterhin verständlich bleibt.
+
+GSAP mit ScrollTrigger steuert die komplexeren Scroll- und Timeline-Abläufe. Framer Motion übernimmt komponentennahe Zustandswechsel, Übergänge und UI-Motion.
+
+Ziel ist nicht möglichst viel Bewegung, sondern verständliche Nutzerführung: Zusammenhänge werden sichtbar, und Besucher können einem Prozess leichter folgen.
+
 ## API Integration
 
 Das Portfolio kann mit separaten Backend-Systemen über definierte APIs kommunizieren.
@@ -146,7 +159,7 @@ Das ist besonders bei KI-, API- und Cloud-Integrationen wichtig.
 
 ## Portfolio Assistant Integration
 
-Der AI Portfolio Assistant ist als eigenständige Funktion in die React-Oberfläche integriert.
+Der AI Portfolio Assistant ist als eigenständige Funktion in die React-Oberfläche von Çağdaş' Portfolio integriert.
 
 Die Oberfläche übernimmt unter anderem Nutzereingabe, Request-Auslösung, Loading State, Response-Darstellung, Fehlerzustände, Darstellung gültiger Antworten und die Darstellung von Citations, sofern vorhanden.
 
@@ -156,11 +169,11 @@ Sie gehört zum separaten Custom-RAG-Backend.
 
 ## Trennung der Projekte
 
-Damit demonstriert das Portfolio zwei miteinander verbundene, aber technisch getrennte Projekte.
+Damit demonstriert Çağdaş' Portfolio zwei miteinander verbundene, aber technisch getrennte Projekte.
 
 ### React Portfolio
 
-Frontend, TypeScript, UI, Responsive Design, Komponenten, Framer Motion, GSAP, Interaktionen und API-Integration.
+Frontend, UI, Responsive Design, Komponenten, Framer Motion, GSAP, Interaktionen und API-Integration.
 
 ### Custom RAG Backend
 
@@ -170,10 +183,14 @@ Beide Systeme kommunizieren über einen definierten API Contract.
 
 ## Positionierung
 
-Das Portfolio zeigt Çağdaş' technische Fähigkeiten nicht ausschließlich durch Texte oder Skill-Listen.
+Klassische, rein präsentierende Portfolio-Seiten stellen Projekte, Technologien und Fähigkeiten häufig vor allem beschreibend vor, etwa über Texte, Projektlisten oder Skill-Listen.
+
+Çağdaş' Portfolio stellt seine Fähigkeiten ebenfalls vor, zeigt sie aber zusätzlich durch die Website selbst: Sie ist als React-Projekt umgesetzt, verwendet interaktive UI und Animationen und bindet über den AI Portfolio Assistant ein eigenes RAG-Backend ein. Besucher können diese technischen Funktionen dadurch nicht nur nachlesen, sondern direkt auf der Website ausprobieren und erleben.
+
+Das Portfolio zeigt Çağdaş' technische Fähigkeiten also nicht ausschließlich durch Texte oder Skill-Listen.
 
 Die Website selbst ist Teil des Nachweises.
 
-Die React-/TypeScript-Architektur, Komponentenstruktur, UI-Umsetzung, Framer-Motion- und GSAP-Animationen sowie die Integration des separaten RAG-Backends sind Bestandteil des technischen Portfolio-Projekts.
+Die React-Architektur, Komponentenstruktur, UI-Umsetzung, Framer-Motion- und GSAP-Animationen sowie die Integration des separaten RAG-Backends sind Bestandteil des technischen Portfolio-Projekts.
 
 Das Portfolio ist damit gleichzeitig Präsentationsoberfläche und praktisches Beispiel seiner Frontend- und Integrationsarbeit.

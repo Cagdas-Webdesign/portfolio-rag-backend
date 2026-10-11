@@ -11,11 +11,12 @@ Two rules govern the sequence:
 * **Nothing from a later phase is implemented early.** Speculative work is the main way an
   architecture rots before it is used.
 
-**All six phases are complete, and v1.0.0 is deployed.** Phase 6 closed the plan: the pipeline is
-measured, adversarially tested, hardened where measurement justified it, and taken to production —
-a Docker container on Google Cloud Run behind a Cloudflare Worker edge gateway
-([DEPLOYMENT.md](DEPLOYMENT.md)). What follows is not a seventh phase: further behavioural change is
-an explicit, scoped, versioned change rather than a continuation of this plan.
+**All six phases are complete.** Phase 6 closed the plan with v1.0.0: the pipeline was measured,
+adversarially tested, hardened where measurement justified it, and taken to production — a Docker
+container on Google Cloud Run behind a Cloudflare Worker edge gateway ([DEPLOYMENT.md](DEPLOYMENT.md)).
+Everything since is not a seventh phase but an explicit, scoped, versioned release, listed in
+[Releases since the plan closed](#releases-since-the-plan-closed). The tree is at **1.3.0**, a
+release candidate; the accepted baseline is `v1.2.0-accepted`.
 
 Cost constraint across all phases: €0. Any phase that would require paid infrastructure gets a free
 alternative or is redesigned.
@@ -262,6 +263,23 @@ limiter: it cannot be written correctly without knowing the proxy topology.
 
 ---
 
+## Releases since the plan closed
+
+Each release is a tag on `main`, set by hand; what a release acceptance is and what it proves is in
+[RELEASE_ACCEPTANCE.md](RELEASE_ACCEPTANCE.md). Dates are the tag dates.
+
+| Version | Date | What changed |
+| --- | --- | --- |
+| v1.0.0 | 2026-09-15 | Phase 6 closed; the production baseline, deployed and smoke-tested |
+| v1.0.1 | 2026-09-28 | presentation: internal source labels no longer leak into answer text |
+| v1.1.0 | 2026-10-04 | failure policy, provider-call observability, cost control, release-acceptance governance; the optional `conversation` request field |
+| v1.1.1 | 2026-10-05 | `top_k` 5 → 7, measured on the production path (`evaluation/README.md`, the window sweep) |
+| v1.1.2 | 2026-10-05 | recovery of structured replies cut off at the output limit; the budget reserve override |
+| v1.2.0 | 2026-10-06 | resumable acceptance runs (checkpoint, run lock), the provider canary, output-cap-aware timeouts, 429 handling |
+| `v1.2.0-accepted` | 2026-10-06 | release acceptance **PASS**: 24/24 questions, 0 pipeline errors, 38/38 citations verified, 4/4 unknowns refused — the accepted baseline |
+| v1.2.1 | 2026-10-07 | presentation: source labels written as prose references are removed as well |
+| **1.3.0** | candidate | optional grounding check on its own provider (Groq), optional Workers AI reasoning effort, source-mark variants canonicalised, exports name the checking model, corpus at 13 documents / 162 chunks. No release acceptance has been run for it |
+
 ## Deliberately not in the plan
 
 Named here so that "we should also build…" has an answer that is already written down.
@@ -271,7 +289,7 @@ Named here so that "we should also build…" has an answer that is already writt
 | Conversation memory, chat history, a conversation database | The assistant answers one question at a time from a fixed corpus. A client may send the last few turns with a question so a follow-up can be read (`rag/conversation.py`); they are never evidence and nothing is stored. Server-side multi-turn state is a product decision nobody has made, and a database is a lot of machinery to add on a guess. |
 | User accounts, authentication | Nothing here is per-user. There is nothing to protect that a public corpus does not already publish. |
 | An agent framework, tool calling, MCP runtime, web search | The authority in this system is the retrieved corpus. Letting a model reach past it would change what the product *is*. |
-| Re-ranking, hybrid/BM25 search, query rewriting, HyDE | Real techniques. Phase 6 measured retrieval and found the limiting factor to be threshold calibration under a specific embedding model, not ranking — so none of them is justified yet. |
+| Re-ranking, hybrid/BM25 search, query rewriting, HyDE | Real techniques. Phase 6 measured retrieval and found the limiting factor to be threshold calibration under a specific embedding model, not ranking. The 2026-10-11 retrieval audit measured per-document caps on the production path and rejected them (they displaced primary evidence); its findings were fixed in the corpus instead (`evaluation/README.md`). None of them is justified yet. |
 | Streaming responses | A latency improvement for answers that are short. Worth revisiting if the numbers say so. |
 | Redis, Kafka, queues, Kubernetes, background workers | No use case. See `AGENTS.md`: no infrastructure without one. |
 | A RAG framework (LangChain, LlamaIndex, Haystack) | Chunking, retrieval, context and grounding are where answer quality is decided. They are written here on purpose. |

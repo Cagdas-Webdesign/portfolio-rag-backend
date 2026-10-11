@@ -143,6 +143,8 @@ IDENTITY_FIELDS: Final = (
     ("retrieval_policy", "visibility"),
     ("generation", "provider"),
     ("generation", "model"),
+    ("generation", "grounding_check_provider"),
+    ("generation", "grounding_check_model"),
     ("generation", "prompt_version"),
     ("generation", "grounding_check_version"),
     ("generation", "response_format"),

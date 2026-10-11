@@ -590,11 +590,15 @@ def spent(
     """Estimated neurons of *calls*, and how many reported no usage.
 
     A call without usage is counted at the structural upper bound — never as
-    free.
+    free. A call made with another model is not priced at all: the grounding
+    check may run on a provider that does not bill in neurons, and counting it
+    at this model's rates would invent consumption that never happened.
     """
     total = 0.0
     unreported = 0
     for call in calls:
+        if call.model != profile.model:
+            continue
         cost = call_neurons(call, profile)
         if cost is None:
             unreported += 1

@@ -18,8 +18,8 @@ technologies:
   - REST
 source: "Çağdaş Uçar"
 source_type: authored
-version: 2
-updated_at: 2026-08-18
+version: 4
+updated_at: 2026-10-11
 visibility: public
 trust_level: authoritative
 ---
@@ -38,9 +38,9 @@ Die konkrete Stellenbezeichnung ist dabei weniger entscheidend als die tatsächl
 
 ## Technische Nachweise im Portfolio
 
-Eine Position kann beispielsweise React, TypeScript, REST APIs, Python, FastAPI, Docker und Backend-Integration verlangen. Für solche Anforderungen existieren konkrete technische Nachweise innerhalb des Portfolios.
+Eine Position kann beispielsweise React, REST APIs, Python, FastAPI, Docker und Backend-Integration verlangen. Für solche Anforderungen existieren konkrete technische Nachweise innerhalb von Çağdaş' Portfolio.
 
-Das React-Portfolio demonstriert beispielsweise Frontend-, TypeScript-, UI-, Motion- und API-Integrationskompetenz.
+Das React-Portfolio demonstriert beispielsweise Frontend-, UI-, Motion- und API-Integrationskompetenz.
 
 Das Custom-RAG-Backend demonstriert unter anderem Python, FastAPI, API Design, Backend Architecture, Retrieval, Provider-Integration, Testing und Production Readiness.
 

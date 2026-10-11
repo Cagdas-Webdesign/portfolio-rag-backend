@@ -17,13 +17,14 @@ technologies:
   - Mistral
   - Cloudflare Vectorize
   - Cloudflare Workers AI
+  - Groq
   - Docker
   - Google Cloud Run
   - REST
 source: "Çağdaş Uçar"
 source_type: authored
-version: 4
-updated_at: 2026-09-14
+version: 7
+updated_at: 2026-10-11
 visibility: public
 trust_level: authoritative
 ---
@@ -169,6 +170,10 @@ Das Backend prüft, ob eine generierte Antwort tatsächlich durch die bereitgest
 Wenn die Antwort nicht ausreichend durch den autorisierten Kontext belegt werden kann, wird sie nicht einfach veröffentlicht.
 
 Dadurch kann das System eine Antwort ablehnen, obwohl Retrieval zuvor Chunks gefunden hat.
+
+Die Grounding-Prüfung ist ein eigener Modellaufruf, getrennt von der Antwortgenerierung. Sie erhält die generierte Antwort zusammen mit den Passagen, die diese Antwort zitiert, und beurteilt nur, ob jede Aussage durch diese Passagen gestützt ist. Sie kann eine Veröffentlichung ausschließlich verhindern, aber weder Quellen hinzufügen noch die Antwort verändern.
+
+Für diese Prüfung ist eine separate Anbindung an Groq mit dem Modell `openai/gpt-oss-20b` implementiert. Damit können Antwortgenerierung und Grounding-Prüfung von zwei unterschiedlichen Modellen übernommen werden. Ohne diese Konfiguration prüft das Generierungsmodell seine Antworten in einem eigenen Aufruf selbst.
 
 Das ist bewusst so gestaltet.
 
@@ -326,7 +331,7 @@ Komplexität wird nicht mit Qualität verwechselt.
 
 ## Portfolio-Relevanz
 
-Der AI Portfolio Assistant demonstriert zwei Ebenen gleichzeitig.
+Çağdaş' AI Portfolio Assistant demonstriert zwei Ebenen gleichzeitig.
 
 Für einen Besucher ist er eine interaktive Funktion innerhalb des Portfolios.
 
@@ -336,19 +341,25 @@ Der Assistent ist damit nicht nur ein Element der Portfolio-Oberfläche. Das Bac
 
 ## Technologie-Stack
 
-Der AI Portfolio Assistant beantwortet Fragen von Besuchern auf der Portfolio-Website. Hinter diesem Chatbot steht kein fertiger Chatbot-Dienst, sondern ein eigenes Custom RAG Backend mit einem klar benennbaren Technologie-Stack.
+Der AI Portfolio Assistant beantwortet Fragen von Besuchern auf der Portfolio-Website. Hinter diesem Chatbot steht kein fertiger Chatbot-Dienst, sondern Çağdaş' eigenes Custom RAG Backend mit einem klar benennbaren Technologie-Stack.
 
 Das Backend ist in Python 3.13 geschrieben. FastAPI bildet die HTTP-Schnittstelle, über die das React-Portfolio den Assistant anspricht.
-
-Für die Embeddings kommt Mistral mit dem Modell `mistral-embed` zum Einsatz. Die Embeddings der Knowledge Chunks liegen in Cloudflare Vectorize, das als Vector Store für das semantische Retrieval dient.
-
-Die Textgenerierung übernimmt Cloudflare Workers AI mit dem Modell `@cf/openai/gpt-oss-120b`. Embeddings und Generation sind damit zwei getrennt konfigurierte Provider.
 
 Ausgeliefert wird das Backend als Docker-Image. Produktiv läuft es als Container auf Google Cloud Run.
 
 Inhaltlich besteht der Assistant aus Knowledge Ingestion, Chunking, Embeddings, Vector Retrieval, Context Building, LLM Generation, Grounding und Citation Validation.
 
 Retrieval, Grounding und Quellenprüfung liegen dabei vollständig im Backend. Das Sprachmodell erhält nur den kontrollierten Kontext und entscheidet weder über die Auswahl der Quellen noch darüber, welche Citations veröffentlicht werden.
+
+### KI-Komponenten
+
+Die KI-Komponenten in Çağdaş' RAG-Backend sind auf getrennte Dienste verteilt: Mistral erzeugt die Embeddings, Cloudflare Vectorize übernimmt die semantische Vektorsuche, Cloudflare Workers AI generiert die Antworten, und für die Grounding-Prüfung ist Groq als separater Provider implementiert.
+
+Für die Embeddings kommt Mistral mit dem Modell `mistral-embed` zum Einsatz. Die Embeddings der Knowledge Chunks liegen in Cloudflare Vectorize, das als Vector Store für das semantische Retrieval dient.
+
+Die Textgenerierung übernimmt Cloudflare Workers AI mit dem Modell `@cf/openai/gpt-oss-120b`. Embeddings und Generation sind damit zwei getrennt konfigurierte Provider.
+
+Für die Grounding-Prüfung ist zusätzlich Groq mit dem Modell `openai/gpt-oss-20b` als eigener, separat konfigurierbarer Provider implementiert.
 
 ## End-to-End-Systemablauf
 
