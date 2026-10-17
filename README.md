@@ -357,6 +357,19 @@ End-to-end runs against the real providers (`--e2e --tier smoke|acceptance`) are
 resumable and judged by `eval validate-acceptance`; what makes one a release acceptance is in
 [docs/RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md).
 
+Retrieval in the last release acceptance that passed — `v1.2.0-accepted`: project version 1.2.0,
+clean commit `b6c4384`, the 24-question `release-acceptance` suite (20 answerable), real corpus
+(12 documents, 151 chunks), `mistral-embed` into Vectorize, `top_k` 7, `min_similarity` 0.25,
+generated 2026-10-06. A question counts as a hit at *k* when an expected document section is among
+its first *k* retrieved passages; MRR is the mean of 1 / that rank, 0 when none was retrieved.
+
+| hit@1 | hit@3 | hit@5 | MRR |
+| --- | --- | --- | --- |
+| 15/20 (75 %) | 17/20 (85 %) | 18/20 (90 %) | 0.817 |
+
+These are 1.2.0 numbers; no release acceptance has been run for 1.3.0, whose corpus differs. The
+export they come from is kept locally, not in this repository.
+
 Read [evaluation/README.md](evaluation/README.md) before quoting any number: it says which corpus,
 model and path each measurement was taken on — the fixture corpus offline, the real corpus on the
 production path (`mistral-embed` into Vectorize). Retrieval parameters are provider-specific:
