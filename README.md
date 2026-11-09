@@ -34,8 +34,8 @@ evaluation — are exactly the parts that need to be measured and changed delibe
 | --- | --- |
 | This tree | **1.3.0**, a release candidate (`portfolio_rag.__version__`) — Ruff, mypy `strict` and 2855 tests pass offline |
 | Accepted baseline | `v1.2.0-accepted`: the last live release acceptance, 24/24 questions, 0 pipeline errors, 38/38 citations verified, 4/4 unknown questions refused. No release acceptance has been run for 1.3.0 ([docs/RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md)) |
-| Production | a Docker image on **Google Cloud Run**, behind a Cloudflare Worker gateway. v1.0.0 was deployed and smoke-tested against the checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); which image a revision runs is Cloud Run state and is not recorded in this repository |
-| Planned | deploy the 1.3.0 image, with the grounding check on Groq and reasoning effort `low`, and re-run the [step 7 smoke test](docs/DEPLOYMENT.md#7-verify) |
+| Production | a Docker image on **Google Cloud Run**, behind a Cloudflare Worker gateway. v1.0.0 was deployed and smoke-tested against the checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). As read from Cloud Run on 2026-11-09, revision `portfolio-rag-00013-xxc` (created 2026-10-11) serves 100 % of traffic from the image tagged `v1.3.0`, with the grounding check on Groq and reasoning effort `low`; no smoke test of that revision is recorded in this repository |
+| Planned | re-run the [step 7 smoke test](docs/DEPLOYMENT.md#7-verify) against the deployed 1.3.0 revision |
 | History | phases and every release since: [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 | Concern | Implementation |
